@@ -84,8 +84,50 @@ class StepStatus(str, Enum):
 
 
 @dataclass
+class TTPReference:
+    """MITRE ATT&CK TTP reference for a scan step."""
+
+    technique_id: str  # e.g., "T1190", "T1059.001"
+    technique_name: str
+    tactic: str
+    description: str = ""
+    url: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "technique_id": self.technique_id,
+            "technique_name": self.technique_name,
+            "tactic": self.tactic,
+            "description": self.description,
+            "url": self.url,
+        }
+
+
+@dataclass
+class OWASPReference:
+    """OWASP category reference for a scan step."""
+
+    category_id: str  # e.g., "A01:2021", "API1:2023", "LLM01:2025"
+    category_name: str
+    standard: str  # "Web Top 10", "API Top 10", "LLM Top 10"
+    severity: str = ""
+    url: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "category_id": self.category_id,
+            "category_name": self.category_name,
+            "standard": self.standard,
+            "severity": self.severity,
+            "url": self.url,
+        }
+
+
+@dataclass
 class ScanStep:
-    """A single step in the scan plan."""
+    """A single step in the scan plan with threat intelligence tagging."""
 
     step_id: str
     step_number: int
@@ -102,6 +144,10 @@ class ScanStep:
     result: dict[str, Any] | None = None
     notes: str = ""
     quota: int = 0  # Max iterations/requests for this step
+    # Threat intelligence tags
+    mitre_ttps: list[TTPReference] = field(default_factory=list)
+    owasp_refs: list[OWASPReference] = field(default_factory=list)
+    cwe_ids: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -121,6 +167,11 @@ class ScanStep:
             "result": self.result,
             "notes": self.notes,
             "quota": self.quota,
+            "threat_intel": {
+                "mitre_attack": [ttp.to_dict() for ttp in self.mitre_ttps],
+                "owasp": [ref.to_dict() for ref in self.owasp_refs],
+                "cwe_ids": self.cwe_ids,
+            },
         }
 
 
@@ -274,6 +325,164 @@ MODULE_TIMEOUTS: dict[str, int] = {
     "deserialization": 300,
     "oauth_testing": 300,
     "cloud_security": 450,
+}
+
+# =============================================================================
+# MITRE ATT&CK TTP Mappings for Modules
+# =============================================================================
+# Maps scan modules to relevant MITRE ATT&CK techniques
+MODULE_MITRE_TTPS: dict[str, list[dict[str, str]]] = {
+    "reconnaissance": [
+        {"id": "T1595", "name": "Active Scanning", "tactic": "Reconnaissance"},
+        {"id": "T1592", "name": "Gather Victim Host Information", "tactic": "Reconnaissance"},
+        {"id": "T1590", "name": "Gather Victim Network Information", "tactic": "Reconnaissance"},
+    ],
+    "enumeration": [
+        {"id": "T1046", "name": "Network Service Discovery", "tactic": "Discovery"},
+        {"id": "T1087", "name": "Account Discovery", "tactic": "Discovery"},
+        {"id": "T1595.001", "name": "Scanning IP Blocks", "tactic": "Reconnaissance"},
+    ],
+    "sql_injection": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+    ],
+    "xss": [
+        {"id": "T1059.007", "name": "JavaScript Execution", "tactic": "Execution"},
+        {"id": "T1539", "name": "Steal Web Session Cookie", "tactic": "Credential Access"},
+    ],
+    "authentication_jwt": [
+        {"id": "T1528", "name": "Steal Application Access Token", "tactic": "Credential Access"},
+        {"id": "T1078", "name": "Valid Accounts", "tactic": "Initial Access"},
+        {"id": "T1110", "name": "Brute Force", "tactic": "Credential Access"},
+    ],
+    "idor": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1087", "name": "Account Discovery", "tactic": "Discovery"},
+    ],
+    "ssrf": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1046", "name": "Network Service Discovery", "tactic": "Discovery"},
+    ],
+    "xxe": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1005", "name": "Data from Local System", "tactic": "Collection"},
+    ],
+    "csrf": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+    ],
+    "rce": [
+        {"id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution"},
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1203", "name": "Exploitation for Client Execution", "tactic": "Execution"},
+    ],
+    "graphql_security": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1087", "name": "Account Discovery", "tactic": "Discovery"},
+    ],
+    "websocket_testing": [
+        {"id": "T1071", "name": "Application Layer Protocol", "tactic": "Command and Control"},
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+    ],
+    "api_security": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1078", "name": "Valid Accounts", "tactic": "Initial Access"},
+    ],
+    "business_logic": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+    ],
+    "file_upload": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1505.003", "name": "Web Shell", "tactic": "Persistence"},
+    ],
+    "deserialization": [
+        {"id": "T1190", "name": "Exploit Public-Facing Application", "tactic": "Initial Access"},
+        {"id": "T1059", "name": "Command and Scripting Interpreter", "tactic": "Execution"},
+    ],
+    "oauth_testing": [
+        {"id": "T1078", "name": "Valid Accounts", "tactic": "Initial Access"},
+        {"id": "T1528", "name": "Steal Application Access Token", "tactic": "Credential Access"},
+    ],
+    "cloud_security": [
+        {"id": "T1078.004", "name": "Cloud Accounts", "tactic": "Initial Access"},
+        {"id": "T1530", "name": "Data from Cloud Storage", "tactic": "Collection"},
+    ],
+}
+
+# =============================================================================
+# OWASP Reference Mappings for Modules
+# =============================================================================
+MODULE_OWASP_REFS: dict[str, list[dict[str, str]]] = {
+    "sql_injection": [
+        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "critical"},
+    ],
+    "xss": [
+        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
+    ],
+    "authentication_jwt": [
+        {"id": "A07:2021", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "API2:2023", "name": "Broken Authentication", "standard": "API Top 10 2023", "severity": "critical"},
+    ],
+    "idor": [
+        {"id": "A01:2021", "name": "Broken Access Control", "standard": "Web Top 10 2021", "severity": "critical"},
+        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "critical"},
+    ],
+    "ssrf": [
+        {"id": "A10:2021", "name": "Server-Side Request Forgery", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "API7:2023", "name": "Server Side Request Forgery", "standard": "API Top 10 2023", "severity": "high"},
+    ],
+    "xxe": [
+        {"id": "A05:2021", "name": "Security Misconfiguration", "standard": "Web Top 10 2021", "severity": "high"},
+    ],
+    "csrf": [
+        {"id": "A01:2021", "name": "Broken Access Control", "standard": "Web Top 10 2021", "severity": "medium"},
+    ],
+    "rce": [
+        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "critical"},
+    ],
+    "graphql_security": [
+        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "high"},
+    ],
+    "api_security": [
+        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "critical"},
+        {"id": "API5:2023", "name": "Broken Function Level Authorization", "standard": "API Top 10 2023", "severity": "high"},
+    ],
+    "business_logic": [
+        {"id": "A04:2021", "name": "Insecure Design", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "API6:2023", "name": "Unrestricted Access to Sensitive Business Flows", "standard": "API Top 10 2023", "severity": "medium"},
+    ],
+    "file_upload": [
+        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "A08:2021", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2021", "severity": "high"},
+    ],
+    "deserialization": [
+        {"id": "A08:2021", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2021", "severity": "high"},
+    ],
+    "oauth_testing": [
+        {"id": "A07:2021", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "API2:2023", "name": "Broken Authentication", "standard": "API Top 10 2023", "severity": "critical"},
+    ],
+    "cloud_security": [
+        {"id": "A05:2021", "name": "Security Misconfiguration", "standard": "Web Top 10 2021", "severity": "medium"},
+    ],
+}
+
+# CWE IDs for modules
+MODULE_CWE_IDS: dict[str, list[str]] = {
+    "sql_injection": ["CWE-89", "CWE-564"],
+    "xss": ["CWE-79"],
+    "authentication_jwt": ["CWE-287", "CWE-798"],
+    "idor": ["CWE-639", "CWE-863"],
+    "ssrf": ["CWE-918"],
+    "xxe": ["CWE-611"],
+    "csrf": ["CWE-352"],
+    "rce": ["CWE-94", "CWE-78"],
+    "graphql_security": ["CWE-89", "CWE-639"],
+    "api_security": ["CWE-285", "CWE-862"],
+    "business_logic": ["CWE-840"],
+    "file_upload": ["CWE-434"],
+    "deserialization": ["CWE-502"],
+    "oauth_testing": ["CWE-287"],
+    "cloud_security": ["CWE-16", "CWE-1004"],
 }
 
 
@@ -603,7 +812,7 @@ class ScanPlanner:
         dependencies: list[str] | None = None,
         description: str | None = None,
     ) -> ScanStep:
-        """Create a single scan step."""
+        """Create a single scan step with threat intelligence tagging."""
         self._step_counter += 1
 
         # Get timeout with TCI multiplier
@@ -612,6 +821,15 @@ class ScanPlanner:
 
         # Calculate quota for this step based on priority
         quota = self._calculate_step_quota(priority)
+
+        # Get MITRE ATT&CK TTPs for this module
+        mitre_ttps = self._get_module_ttps(module)
+
+        # Get OWASP references for this module
+        owasp_refs = self._get_module_owasp_refs(module)
+
+        # Get CWE IDs for this module
+        cwe_ids = MODULE_CWE_IDS.get(module, [])
 
         return ScanStep(
             step_id=f"step-{uuid.uuid4().hex[:8]}",
@@ -631,7 +849,36 @@ class ScanPlanner:
                 "complexity": tci_result.complexity_level.value,
             },
             quota=quota,
+            mitre_ttps=mitre_ttps,
+            owasp_refs=owasp_refs,
+            cwe_ids=cwe_ids,
         )
+
+    def _get_module_ttps(self, module: str) -> list[TTPReference]:
+        """Get MITRE ATT&CK TTP references for a module."""
+        ttp_data = MODULE_MITRE_TTPS.get(module, [])
+        return [
+            TTPReference(
+                technique_id=ttp["id"],
+                technique_name=ttp["name"],
+                tactic=ttp["tactic"],
+                url=f"https://attack.mitre.org/techniques/{ttp['id'].replace('.', '/')}/",
+            )
+            for ttp in ttp_data
+        ]
+
+    def _get_module_owasp_refs(self, module: str) -> list[OWASPReference]:
+        """Get OWASP references for a module."""
+        owasp_data = MODULE_OWASP_REFS.get(module, [])
+        return [
+            OWASPReference(
+                category_id=ref["id"],
+                category_name=ref["name"],
+                standard=ref["standard"],
+                severity=ref.get("severity", ""),
+            )
+            for ref in owasp_data
+        ]
 
     def _determine_module_priority(
         self, module: str, tci_result: TCIResult
