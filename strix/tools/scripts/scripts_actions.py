@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import traceback
 from typing import Any
 
 from strix.tools.registry import register_tool
@@ -119,25 +120,26 @@ def execute_script(
             parameters='{"target": "192.168.1.1"}'
         )
     """
+    # Parse parameters first (separate error handling)
     try:
-        registry = get_scripts_registry()
-
-        # Parse parameters
         params = json.loads(parameters) if parameters else {}
-
-        # Execute (run async in sync context)
-        loop = asyncio.new_event_loop()
-        try:
-            result = loop.run_until_complete(registry.execute(name, **params))
-        finally:
-            loop.close()
-
-        return result.to_dict()
-
     except json.JSONDecodeError as e:
         return {
             "success": False,
             "error": f"Invalid JSON in parameters: {e}",
+        }
+
+    # Execute the script
+    try:
+        registry = get_scripts_registry()
+        result = asyncio.run(registry.execute(name, **params))
+        return result.to_dict()
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": f"{type(e).__name__}: {e}",
+            "traceback": traceback.format_exc(),
         }
 
 
