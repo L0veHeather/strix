@@ -34,6 +34,7 @@ Strix is an AI-powered autonomous penetration testing agent that conducts securi
 | 10 | [Sandbox Lifecycle](10-sandbox-lifecycle.md) | Docker container management, tool server |
 | 11 | [LLM Prompt Construction](11-llm-prompt-construction.md) | Prompt building, module loading, response parsing |
 | 12 | [Scan Result Persistence](12-scan-result-persistence.md) | Telemetry, vulnerability reports, output files |
+| 13 | [Scope System Architecture](13-scope-system-architecture.md) | Scope models, parser, validator, telemetry, role-based access, progress |
 
 ## Architecture Overview
 
