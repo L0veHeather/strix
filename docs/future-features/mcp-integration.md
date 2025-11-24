@@ -1,738 +1,724 @@
 # MCP Integration Plan
 
-This document outlines the strategy for integrating the Model Context Protocol (MCP) into Strix, enabling interoperability with external AI tools like Claude Code, OpenAI Codex CLI, and Google Gemini CLI while preserving the performance benefits of Strix's native tool system.
+This document outlines the strategy for integrating the Model Context Protocol (MCP) into Strix, enabling multi-model workflows and external orchestration while preserving native tool performance.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Related Issues](#related-issues)
-- [Current Architecture](#current-architecture)
-- [Integration Strategy: Hybrid Approach](#integration-strategy-hybrid-approach)
-- [MCP Server Implementation](#mcp-server-implementation)
-- [MCP Client Implementation](#mcp-client-implementation)
-- [zen-mcp-server Integration](#zen-mcp-server-integration)
-- [Claude Code Integration](#claude-code-integration)
-- [OpenAI Codex CLI Integration](#openai-codex-cli-integration)
-- [Google Gemini CLI Integration](#google-gemini-cli-integration)
-- [Configuration Design](#configuration-design)
+- [Architecture Options](#architecture-options)
+- [LLM Roles Configuration](#llm-roles-configuration)
+- [Option A: Strix-Native with zen-mcp](#option-a-strix-native-with-zen-mcp)
+- [Option B: External Orchestration](#option-b-external-orchestration)
+- [Strix as MCP Server](#strix-as-mcp-server)
+- [Configuration Reference](#configuration-reference)
 - [Implementation Phases](#implementation-phases)
-- [Trade-offs and Considerations](#trade-offs-and-considerations)
 - [Security Considerations](#security-considerations)
 
 ---
 
 ## Overview
 
-### What is MCP?
+### The Problem
 
-The Model Context Protocol (MCP) is an open standard that enables AI applications to share context, tools, and resources. It provides a unified way for AI assistants to interact with external systems through:
+Strix currently uses a single LLM via LiteLLM. While performant, this limits:
 
-- **Tools**: Executable functions that AI can invoke
-- **Resources**: Data sources the AI can read
-- **Prompts**: Reusable prompt templates
+1. **Model specialization**: Different models excel at different tasks
+2. **Cost optimization**: Expensive models aren't always needed
+3. **External orchestration**: Using Strix from Claude Code, Codex, or Gemini CLI
+4. **Validation workflows**: Cross-checking findings with multiple models
 
-### Why MCP for Strix?
+### Design Principles
 
-Strix currently uses a custom tool system optimized for penetration testing workflows. While highly performant, this creates barriers for:
-
-1. **External orchestration**: Using Strix tools from Claude Code, Codex, or Gemini
-2. **Multi-model workflows**: Coordinating multiple AI models in a single engagement
-3. **Ecosystem integration**: Leveraging the growing MCP tool ecosystem
-
-### Design Goals
-
-1. **Preserve performance**: Native tools remain the fast path for internal operations
-2. **Enable interoperability**: Expose Strix capabilities via MCP for external tools
-3. **Minimize complexity**: Clean abstractions that don't complicate the core system
-4. **Bidirectional support**: Both expose tools (server) and consume tools (client)
+1. **Don't reinvent the wheel**: zen-mcp-server already handles multi-model orchestration
+2. **Keep Strix fast**: Native tools remain the execution layer
+3. **Configuration over code**: Model routing via YAML, not custom logic
+4. **Two clean deployment modes**: Not a complex hybrid
 
 ---
 
 ## Related Issues
 
-This plan addresses the following GitHub issues:
-
 | Issue | Title | Summary |
 |-------|-------|---------|
-| [#31](https://github.com/usestrix/strix/issues/31) | Integration with OpenAI's Codex | Enable Codex CLI as an orchestration layer |
+| [#31](https://github.com/usestrix/strix/issues/31) | Integration with OpenAI's Codex | Enable Codex CLI as orchestration layer |
 | [#66](https://github.com/usestrix/strix/issues/66) | Add support for Claude Code | Use Claude Code's auth/session management |
 | [#109](https://github.com/usestrix/strix/issues/109) | MCP Support | Expose Strix services via MCP protocol |
 | [#117](https://github.com/usestrix/strix/issues/117) | Add support for Google Gemini 3.0 | Integrate Gemini as an LLM provider |
 
 ---
 
-## Current Architecture
+## Architecture Options
 
-### Native Tool System
+There are two clean deployment architectures. Choose based on your workflow.
 
-Strix's existing tool system is built around:
+### Option A: Strix-Native (Recommended for Speed)
+
+Strix drives the scan, optionally using zen-mcp for multi-model capabilities.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    TOOL REGISTRY                            │
-│   @register_tool decorator → tools dict → XML schemas       │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    TOOL EXECUTOR                            │
-│   execute_tool() → route to sandbox or host                 │
-└──────────────────────┬──────────────────────────────────────┘
-                       │
-         ┌─────────────┴─────────────┐
-         ▼                           ▼
-┌─────────────────┐        ┌─────────────────┐
-│  SANDBOX EXEC   │        │   HOST EXEC     │
-│  (Docker/HTTP)  │        │   (Direct)      │
-└─────────────────┘        └─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                         STRIX                                   │
+│                                                                 │
+│  ┌───────────────────────────────────────────────────────────┐ │
+│  │                    STRIX AGENT                             │ │
+│  │              (Primary LLM via LiteLLM)                     │ │
+│  └─────────────────────────┬─────────────────────────────────┘ │
+│                            │                                    │
+│            ┌───────────────┼───────────────┐                   │
+│            ▼               ▼               ▼                    │
+│     ┌────────────┐  ┌────────────┐  ┌────────────┐             │
+│     │  NATIVE    │  │ zen-mcp    │  │  LLM       │             │
+│     │  TOOLS     │  │ (optional) │  │  ROLES     │             │
+│     │  (fast)    │  │            │  │  CONFIG    │             │
+│     └────────────┘  └─────┬──────┘  └─────┬──────┘             │
+│                           │               │                     │
+└───────────────────────────┼───────────────┼─────────────────────┘
+                            │               │
+                            ▼               ▼
+                  ┌──────────────────────────────────┐
+                  │        MODEL PROVIDERS           │
+                  │  Claude | Gemini | GPT | Ollama  │
+                  └──────────────────────────────────┘
 ```
 
-### Strengths of Native System
+**When to use**:
+- Performance-critical scans
+- Single-model workflows
+- When you want Strix in control
 
-- **Low latency**: Direct function calls, no protocol overhead
-- **Type safety**: Python type hints with Pydantic validation
-- **Sandbox isolation**: Secure execution in Docker containers
-- **Role-based access**: Tools filtered by agent role (COORDINATOR, RECONNAISSANCE, etc.)
-- **Tight integration**: Tools can access AgentState directly
+### Option B: External Orchestration (Recommended for Flexibility)
 
-### Integration Points for MCP
+External AI tool drives the workflow, Strix provides pentest capabilities via MCP.
 
-| Component | MCP Role | Notes |
-|-----------|----------|-------|
-| `tools/registry.py` | Tool definitions | Can generate MCP tool schemas |
-| `tools/executor.py` | Tool execution | Can handle MCP tool calls |
-| `llm/llm.py` | LLM interface | Can route to MCP clients |
-| `runtime/tool_server.py` | HTTP interface | Can expose MCP endpoint |
-| `agents/base_agent.py` | Agent loop | Can consume MCP tool results |
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    ORCHESTRATION LAYER                          │
+│         (Claude Code / Codex CLI / Gemini CLI / OpenCode)       │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      zen-mcp-server                             │
+│                    (Multi-Model Hub)                            │
+│                                                                 │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
+│   │  thinkdeep  │  │  consensus  │  │  codereview │            │
+│   │  (reasoning)│  │ (validation)│  │  (analysis) │            │
+│   └─────────────┘  └─────────────┘  └─────────────┘            │
+│                                                                 │
+│   Model Routing: fast | thinking | coding | local              │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    STRIX (MCP Server)                           │
+│                                                                 │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐            │
+│   │  terminal   │  │   browser   │  │    proxy    │            │
+│   │  execute    │  │   action    │  │   tools     │            │
+│   └─────────────┘  └─────────────┘  └─────────────┘            │
+│                                                                 │
+│   Pentest Tools in Docker Sandbox                              │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**When to use**:
+- Conversational workflows ("help me test this API")
+- Multi-model validation requirements
+- When you want Claude Code/Codex/Gemini in control
+- Complex reasoning with specialized model routing
 
 ---
 
-## Integration Strategy: Hybrid Approach
+## LLM Roles Configuration
 
-The recommended approach is a **hybrid architecture** that maintains native tools as the primary execution path while adding MCP as an optional interoperability layer.
+Both options benefit from defining model roles. Different tasks need different models.
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         STRIX AGENT                                 │
-│                                                                     │
-│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐             │
-│  │  NATIVE     │    │   MCP       │    │   MCP       │             │
-│  │  TOOLS      │    │  SERVER     │    │  CLIENT     │             │
-│  │  (Fast)     │    │  (Expose)   │    │  (Consume)  │             │
-│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘             │
-│         │                  │                  │                     │
-│         └────────┬─────────┴────────┬─────────┘                     │
-│                  │                  │                               │
-│                  ▼                  ▼                               │
-│         ┌─────────────────────────────────────┐                     │
-│         │      UNIFIED TOOL INTERFACE         │                     │
-│         │  execute_tool(name, params, source) │                     │
-│         └─────────────────────────────────────┘                     │
-└─────────────────────────────────────────────────────────────────────┘
-                              │
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-        ▼                     ▼                     ▼
-┌───────────────┐    ┌───────────────┐    ┌───────────────┐
-│  Claude Code  │    │   Codex CLI   │    │  Gemini CLI   │
-│  (via MCP)    │    │   (via MCP)   │    │  (via MCP)    │
-└───────────────┘    └───────────────┘    └───────────────┘
-```
+### Role Definitions
 
-### Key Principles
+| Role | Purpose | Characteristics | Example Models |
+|------|---------|-----------------|----------------|
+| `fast` | Quick operations, simple tasks | Low latency, cheap | `gemini-2.0-flash`, `gpt-4o-mini` |
+| `local` | Cost-free, offline, privacy | No API calls | `ollama/llama3.1`, `ollama/qwen2.5` |
+| `thinking` | Complex reasoning, planning | Deep analysis | `claude-sonnet-4.5`, `o3`, `gemini-3.0-pro` |
+| `coding` | Code analysis, exploit dev | Code-optimized | `claude-sonnet-4.5`, `codex-medium` |
+| `validation` | Cross-check findings | Different perspective | Model different from primary |
 
-1. **Native first**: Internal tool calls bypass MCP entirely
-2. **MCP for external**: Only use MCP when interacting with external systems
-3. **Adapter pattern**: Translate between native and MCP formats at boundaries
-4. **Configuration-driven**: Enable/disable MCP features via environment
+### Configuration File: `llm.yaml`
 
----
+```yaml
+# LLM Roles Configuration
+# Define which models to use for different purposes
 
-## MCP Server Implementation
+roles:
+  # Primary model for main agent loop
+  primary:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    description: Main reasoning model for scan orchestration
 
-Exposing Strix tools as an MCP server allows external AI tools to invoke them.
+  # Fast model for quick operations
+  fast:
+    provider: google
+    model: gemini-2.0-flash
+    description: Low-latency for simple tasks, progress updates
+    max_tokens: 1000
 
-### Architecture
+  # Local model for cost savings / offline
+  local:
+    provider: ollama
+    model: llama3.1
+    base_url: http://localhost:11434
+    description: Free local inference, use when cost-sensitive
+    fallback_to: fast  # If Ollama unavailable
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    STRIX MCP SERVER                         │
-│                                                             │
-│  ┌─────────────────┐    ┌─────────────────┐                │
-│  │  MCP Protocol   │    │  Tool Adapter   │                │
-│  │  Handler        │───▶│  (Native ↔ MCP) │                │
-│  └─────────────────┘    └────────┬────────┘                │
-│                                  │                          │
-│                                  ▼                          │
-│                    ┌─────────────────────────┐              │
-│                    │    Native Tool Registry │              │
-│                    │    + Tool Executor      │              │
-│                    └─────────────────────────┘              │
-└─────────────────────────────────────────────────────────────┘
-```
+  # Thinking model for complex analysis
+  thinking:
+    provider: google
+    model: gemini-3.0-pro
+    description: Deep reasoning for vulnerability analysis
+    # Alternative: openai/o3, anthropic/claude-sonnet-4.5
 
-### Tool Schema Translation
+  # Coding model for exploit development
+  coding:
+    provider: anthropic
+    model: claude-sonnet-4-20250514
+    description: Code generation and analysis
+    # Alternative: openai/codex-medium
 
-Native tool definition:
-```python
-@register_tool(sandbox_execution=True)
-def terminal_execute(command: str, timeout: int = 120) -> dict[str, Any]:
-    """Execute a bash command in the sandbox environment."""
-    ...
-```
+  # Validation model (intentionally different from primary)
+  validation:
+    provider: openai
+    model: gpt-5-turbo
+    description: Cross-validate findings with different model family
 
-MCP tool schema:
-```json
-{
-  "name": "terminal_execute",
-  "description": "Execute a bash command in the sandbox environment.",
-  "inputSchema": {
-    "type": "object",
-    "properties": {
-      "command": {"type": "string", "description": "The command to execute"},
-      "timeout": {"type": "integer", "description": "Timeout in seconds", "default": 120}
-    },
-    "required": ["command"]
-  }
-}
+# Task-to-role mapping
+task_routing:
+  # Which role to use for specific operations
+  planning: thinking
+  reconnaissance: primary
+  exploitation: coding
+  reporting: fast
+  vuln_analysis: thinking
+  code_review: coding
+  finding_validation: validation
+
+# Cost optimization settings
+cost_optimization:
+  # Use local model first, fallback to cloud
+  prefer_local: true
+  local_timeout_seconds: 30
+
+  # Use fast model for operations under N tokens
+  fast_threshold_tokens: 500
+
+  # Rate limiting
+  rate_limit_delay_seconds: 1
 ```
 
-### Required Components
-
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| `mcp/server.py` | New file | MCP protocol handler |
-| `mcp/adapters.py` | New file | Tool schema translation |
-| `mcp/auth.py` | New file | Authentication for MCP connections |
-| `tools/registry.py` | Modify | Add MCP schema generation |
-
-### Exposed Tools (Recommended Subset)
-
-Not all tools should be exposed via MCP. Recommended subset:
-
-| Tool | Expose | Reason |
-|------|--------|--------|
-| `terminal_execute` | Yes | Core capability |
-| `browser_action` | Yes | Web testing |
-| `python_action` | Yes | Code execution |
-| `str_replace_editor` | Yes | File editing |
-| `list_requests` | Yes | Proxy inspection |
-| `send_request` | Yes | HTTP testing |
-| `create_vulnerability_report` | Yes | Output |
-| `create_agent` | No | Internal orchestration |
-| `agent_finish` | No | Internal lifecycle |
-| `think` | No | Internal reasoning |
-
-### Server Startup Options
+### Environment Variable Override
 
 ```bash
-# Option 1: Standalone MCP server
-strix --mcp-server --port 8080
+# Override specific roles via environment
+STRIX_LLM_PRIMARY="anthropic/claude-sonnet-4-20250514"
+STRIX_LLM_FAST="google/gemini-2.0-flash"
+STRIX_LLM_LOCAL="ollama/llama3.1"
+STRIX_LLM_THINKING="google/gemini-3.0-pro"
+STRIX_LLM_CODING="anthropic/claude-sonnet-4-20250514"
+STRIX_LLM_VALIDATION="openai/gpt-5-turbo"
 
-# Option 2: Integrated with scan (exposes tools during scan)
-strix --target example.com --enable-mcp --mcp-port 8080
+# Local model configuration
+LLM_LOCAL_BASE_URL="http://192.168.1.100:11434"
 
-# Option 3: Unix socket (for local tools like Claude Code)
-strix --mcp-server --socket /tmp/strix-mcp.sock
+# Or use a single model for everything (current behavior)
+STRIX_LLM="anthropic/claude-sonnet-4-20250514"
 ```
 
 ---
 
-## MCP Client Implementation
+## Option A: Strix-Native with zen-mcp
 
-Consuming external MCP tools allows Strix to leverage ecosystem tools.
+In this mode, Strix runs the scan and optionally uses zen-mcp for multi-model operations.
 
-### Use Cases
+### Basic Setup (Single Model)
 
-1. **Extended capabilities**: Use zen-mcp-server's `thinkdeep`, `consensus` tools
-2. **Multi-model validation**: Route findings to other models for verification
-3. **Documentation lookup**: Use `apilookup` for current API docs
+This is the current behavior - no changes needed:
 
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    STRIX AGENT                              │
-│                                                             │
-│  ┌─────────────────┐                                        │
-│  │  LLM Response   │                                        │
-│  │  Parser         │                                        │
-│  └────────┬────────┘                                        │
-│           │                                                 │
-│           ▼                                                 │
-│  ┌─────────────────────────────────────┐                   │
-│  │       TOOL DISPATCHER               │                   │
-│  │  if native_tool → native_executor   │                   │
-│  │  if mcp_tool → mcp_client           │                   │
-│  └────────┬────────────────┬───────────┘                   │
-│           │                │                               │
-│           ▼                ▼                               │
-│  ┌─────────────┐  ┌─────────────────┐                      │
-│  │   Native    │  │   MCP Client    │                      │
-│  │   Executor  │  │   Pool          │                      │
-│  └─────────────┘  └────────┬────────┘                      │
-│                            │                               │
-└────────────────────────────┼───────────────────────────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              ▼              ▼              ▼
-       ┌───────────┐  ┌───────────┐  ┌───────────┐
-       │ zen-mcp   │  │ custom    │  │ other     │
-       │ server    │  │ server    │  │ server    │
-       └───────────┘  └───────────┘  └───────────┘
+```bash
+export STRIX_LLM="anthropic/claude-sonnet-4-20250514"
+export LLM_API_KEY="sk-ant-..."
+strix --target https://example.com
 ```
 
-### Required Components
+### Enhanced Setup (With LLM Roles)
 
-| Component | Location | Purpose |
-|-----------|----------|---------|
-| `mcp/client.py` | New file | MCP protocol client |
-| `mcp/pool.py` | New file | Connection pooling |
-| `tools/executor.py` | Modify | Route MCP tools |
-| `llm/utils.py` | Modify | Parse MCP tool invocations |
+```bash
+# Create llm.yaml with role definitions
+strix --target https://example.com --llm-config llm.yaml
+```
+
+### With zen-mcp for Multi-Model
+
+```bash
+# 1. Start zen-mcp-server
+cd zen-mcp-server && ./run-server.sh &
+
+# 2. Configure Strix to use it
+export STRIX_ZEN_MCP_SOCKET="/tmp/zen-mcp.sock"
+
+# 3. Run scan - Strix can now use zen-mcp tools
+strix --target https://example.com --enable-zen-mcp
+```
+
+### When Strix Uses zen-mcp
+
+With zen-mcp enabled, the agent can:
+
+```
+Strix Agent: "I found a potential SQLi. Let me validate with another model."
+  └─▶ Native: terminal_execute (run sqlmap)
+  └─▶ zen-mcp: thinkdeep (analyze with Gemini Pro)
+  └─▶ zen-mcp: consensus (get O3 + Claude opinions)
+  └─▶ Native: create_vulnerability_report (document finding)
+```
+
+### Implementation Requirements
+
+1. **LLM roles config loader** - Parse `llm.yaml` and route by task
+2. **zen-mcp client** - Connect to zen-mcp-server as MCP client
+3. **Tool routing** - Native tools stay native, zen-mcp tools via MCP
 
 ---
 
-## zen-mcp-server Integration
+## Option B: External Orchestration
 
-[zen-mcp-server](https://github.com/BeehiveInnovations/zen-mcp-server) provides multi-model orchestration capabilities that complement Strix.
+In this mode, an external AI tool (Claude Code, Codex, Gemini CLI) orchestrates, with zen-mcp-server in the middle and Strix as a tool provider.
 
-### Relevant Features
-
-| Feature | Strix Use Case |
-|---------|---------------|
-| `chat` | Multi-turn brainstorming with different models |
-| `thinkdeep` | Extended reasoning for complex vulnerabilities |
-| `consensus` | Multi-model validation of findings |
-| `codereview` | Security-focused code review |
-| `clink` | Bridge to Claude Code/Codex for specific tasks |
-| `apilookup` | Current API documentation for testing |
-
-### Integration Architecture
+### Architecture Detail
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         STRIX SCAN                                  │
-│                                                                     │
-│  ┌─────────────────────────────────────────────────────────────┐   │
-│  │                    STRIX AGENT                               │   │
-│  │                                                              │   │
-│  │  Native Tools:                   MCP Tools (zen-mcp):        │   │
-│  │  - terminal_execute              - thinkdeep                 │   │
-│  │  - browser_action                - consensus                 │   │
-│  │  - python_action                 - codereview                │   │
-│  │  - send_request                  - apilookup                 │   │
-│  │  - create_vulnerability_report   - clink (→ Claude/Codex)   │   │
-│  └──────────────────────────────────────────────────────────────┘   │
-│                              │                                      │
-│                              ▼                                      │
-│                    ┌─────────────────┐                             │
-│                    │  zen-mcp-server │                             │
-│                    │  (subprocess)   │                             │
-│                    └────────┬────────┘                             │
-│                             │                                       │
-│              ┌──────────────┼──────────────┐                       │
-│              ▼              ▼              ▼                        │
-│         ┌────────┐    ┌────────┐    ┌────────┐                     │
-│         │ Gemini │    │ OpenAI │    │ Grok   │                     │
-│         │ Pro    │    │ O3     │    │        │                     │
-│         └────────┘    └────────┘    └────────┘                     │
-└─────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        USER INTERFACE                                │
+│              (Claude Code / Codex / Gemini CLI / OpenCode)           │
+│                                                                      │
+│  User: "Scan example.com for IDOR vulnerabilities"                   │
+└──────────────────────────────┬───────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                        zen-mcp-server                                │
+│                      (Central MCP Hub)                               │
+│                                                                      │
+│  Receives request, routes to appropriate model/tool:                 │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                    MODEL ROUTING                                │ │
+│  │                                                                 │ │
+│  │  fast: gemini-2.0-flash     thinking: gemini-3.0-pro           │ │
+│  │  coding: claude-4.5         validation: o3                      │ │
+│  │  local: ollama/llama3.1                                         │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                    BUILT-IN TOOLS                               │ │
+│  │                                                                 │ │
+│  │  thinkdeep    consensus    codereview    apilookup             │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+│                                                                      │
+│  ┌────────────────────────────────────────────────────────────────┐ │
+│  │                    CONNECTED MCP SERVERS                        │ │
+│  │                                                                 │ │
+│  │  strix (pentest tools)    filesystem    git    ...             │ │
+│  └────────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────┬───────────────────────────────────────┘
+                               │
+                               ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                     STRIX (MCP Server Mode)                          │
+│                                                                      │
+│  Exposes pentest tools via MCP:                                      │
+│                                                                      │
+│  Tools:                        Execution:                            │
+│  - terminal_execute            Docker sandbox                        │
+│  - browser_action              Playwright                            │
+│  - python_action               Python runtime                        │
+│  - send_request                HTTP client                           │
+│  - list_requests               Caido proxy                           │
+│  - str_replace_editor          File operations                       │
+│  - create_vulnerability_report Reporting                             │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Setup Requirements
+### Setup
 
-1. **Clone zen-mcp-server**:
-   ```bash
-   git clone https://github.com/BeehiveInnovations/zen-mcp-server.git
-   ```
+**1. Configure zen-mcp-server** (`zen-mcp-server/.env`):
 
-2. **Configure API keys** (in `.env`):
-   ```bash
-   OPENROUTER_API_KEY=...
-   GOOGLE_API_KEY=...
-   OPENAI_API_KEY=...
-   ```
+```bash
+# Model providers
+OPENROUTER_API_KEY=...
+GOOGLE_API_KEY=...
+OPENAI_API_KEY=...
+ANTHROPIC_API_KEY=...
 
-3. **Configure Strix** to use zen-mcp:
-   ```bash
-   export STRIX_MCP_SERVERS='[{"name": "zen", "command": ["./zen-mcp-server/run-server.sh"]}]'
-   ```
+# Model routing
+DEFAULT_MODEL=anthropic/claude-sonnet-4.5
+FAST_MODEL=google/gemini-2.0-flash
+THINKING_MODEL=google/gemini-3.0-pro
+CODING_MODEL=anthropic/claude-sonnet-4.5
 
-### Workflow Example: Multi-Model Vulnerability Validation
-
-```
-1. Strix discovers potential SQLi via native tools
-   └─▶ terminal_execute: sqlmap scan
-   └─▶ browser_action: capture response
-
-2. Route to zen-mcp for validation
-   └─▶ thinkdeep: "Analyze this SQLi finding..."
-   └─▶ consensus: Get opinions from Gemini + O3
-
-3. Document with native tools
-   └─▶ create_vulnerability_report: Include multi-model analysis
+# Enable Strix as connected MCP server
+MCP_SERVERS='[{"name": "strix", "command": ["strix", "--mcp-server"]}]'
 ```
 
----
+**2. Configure Claude Code** (`~/.claude/settings.json`):
 
-## Claude Code Integration
-
-Claude Code integration addresses [Issue #66](https://github.com/usestrix/strix/issues/66).
-
-### Integration Options
-
-#### Option A: Claude Code as MCP Client (Recommended)
-
-Strix runs as an MCP server, Claude Code connects as client.
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│  Claude Code    │  MCP    │  Strix MCP      │
-│  (orchestrator) │ ◀─────▶ │  Server         │
-└─────────────────┘         └─────────────────┘
-```
-
-**Configuration** (`~/.claude/settings.json`):
 ```json
 {
   "mcpServers": {
-    "strix": {
-      "command": "strix",
-      "args": ["--mcp-server"],
+    "zen": {
+      "command": "./zen-mcp-server/run-server.sh",
       "env": {
-        "STRIX_SANDBOX_MODE": "true"
+        "MCP_SERVERS": "[{\"name\": \"strix\", \"command\": [\"strix\", \"--mcp-server\"]}]"
       }
     }
   }
 }
 ```
 
-**Benefits**:
-- Claude Code handles auth/session management
-- Strix tools appear in Claude Code's tool palette
-- User can orchestrate scans conversationally
-
-#### Option B: Claude Code as LLM Provider
-
-Use Claude Code's authentication instead of direct API keys.
-
-```bash
-# Instead of:
-export STRIX_LLM="anthropic/claude-sonnet-4-20250514"
-export LLM_API_KEY="sk-ant-..."
-
-# Use:
-export STRIX_LLM="claude-code/claude-sonnet-4.5"
-export STRIX_CLAUDE_CODE_PATH="/usr/local/bin/claude"
-```
-
-**Implementation**: Subprocess wrapper that invokes `claude` CLI for completions.
-
-**Benefits**:
-- No API key management
-- Uses Claude Code's token optimization
-- Better for CI/CD environments
-
-#### Option C: Via zen-mcp-server clink
-
-Use zen-mcp-server's `clink` tool to spawn Claude Code subagents.
+**3. Use from Claude Code**:
 
 ```
-Strix Agent → zen-mcp → clink → Claude Code subprocess
+User: Scan https://api.example.com for authentication bypasses
+
+Claude Code: I'll use the Strix pentest tools to scan this API.
+
+[Invokes zen-mcp → strix tools]
+- terminal_execute: nmap port scan
+- browser_action: explore authentication endpoints
+- send_request: test auth bypass payloads
+- thinkdeep: analyze responses for vulnerabilities
+- create_vulnerability_report: document findings
 ```
 
-**Benefits**:
-- Minimal changes to Strix
-- Fresh context for each Claude Code invocation
-- Good for specific sub-tasks (code review, analysis)
+### Workflow Example
 
-### Recommended Approach
-
-1. **Primary**: Option A (MCP Server) for full orchestration
-2. **Secondary**: Option C (clink) for sub-task delegation
-3. **Future**: Option B for API-key-free operation
+```
+User (in Claude Code):
+  "Test the /api/users endpoint for IDOR"
+       │
+       ▼
+Claude Code (orchestrator):
+  "I'll analyze this systematically"
+       │
+       ├──▶ zen-mcp: thinkdeep
+       │    "Plan IDOR test methodology"
+       │    (Uses: gemini-3.0-pro)
+       │
+       ├──▶ strix: browser_action
+       │    "Authenticate and capture session"
+       │
+       ├──▶ strix: send_request
+       │    "GET /api/users/1 with user A session"
+       │    "GET /api/users/2 with user A session"
+       │
+       ├──▶ zen-mcp: consensus
+       │    "Is this response an IDOR vulnerability?"
+       │    (Uses: claude-4.5 + o3 + gemini-3.0)
+       │
+       └──▶ strix: create_vulnerability_report
+            "Document confirmed IDOR"
+```
 
 ---
 
-## OpenAI Codex CLI Integration
+## Strix as MCP Server
 
-Codex CLI integration addresses [Issue #31](https://github.com/usestrix/strix/issues/31).
+Both options require Strix to expose tools via MCP.
 
-### Integration Options
+### Exposed Tools
 
-#### Option A: Codex as MCP Client
+| Tool | Description | Sandbox |
+|------|-------------|---------|
+| `terminal_execute` | Run shell commands | Yes |
+| `browser_action` | Playwright browser automation | Yes |
+| `python_action` | Execute Python code | Yes |
+| `str_replace_editor` | File read/write/edit | Yes |
+| `send_request` | HTTP requests | Yes |
+| `repeat_request` | Replay captured requests | Yes |
+| `list_requests` | View proxy traffic | Yes |
+| `view_request` | Inspect request details | Yes |
+| `create_vulnerability_report` | Document findings | No |
+| `web_search` | Perplexity search | No |
 
+### NOT Exposed (Internal Only)
+
+| Tool | Reason |
+|------|--------|
+| `create_agent` | Internal orchestration |
+| `agent_finish` | Internal lifecycle |
+| `send_message_to_agent` | Internal messaging |
+| `think` | Internal reasoning |
+| `finish_scan` | Internal completion |
+
+### MCP Server Implementation
+
+```python
+# strix/mcp/server.py
+
+from mcp import Server
+from strix.tools.registry import get_mcp_exposed_tools, get_tool_by_name
+from strix.tools.executor import execute_tool
+
+class StrixMCPServer:
+    def __init__(self):
+        self.server = Server("strix")
+        self._register_tools()
+
+    def _register_tools(self):
+        for tool_def in get_mcp_exposed_tools():
+            self.server.register_tool(
+                name=tool_def.name,
+                description=tool_def.description,
+                input_schema=tool_def.to_mcp_schema(),
+                handler=self._create_handler(tool_def.name)
+            )
+
+    def _create_handler(self, tool_name: str):
+        async def handler(**kwargs):
+            result = await execute_tool(tool_name, agent_state=None, **kwargs)
+            return result
+        return handler
 ```
-┌─────────────────┐         ┌─────────────────┐
-│  Codex CLI      │  MCP    │  Strix MCP      │
-│  (orchestrator) │ ◀─────▶ │  Server         │
-└─────────────────┘         └─────────────────┘
-```
 
-**Configuration** (`~/.codex/config.json`):
-```json
-{
-  "mcpServers": {
-    "strix": {
-      "command": "strix",
-      "args": ["--mcp-server"]
-    }
-  }
-}
-```
-
-#### Option B: Via zen-mcp-server
-
-Use zen-mcp's `clink` to spawn Codex subagents for specific tasks.
-
-#### Option C: Direct LiteLLM Integration
-
-Codex models are already supported via LiteLLM:
+### Running as MCP Server
 
 ```bash
-export STRIX_LLM="openai/codex-medium"
-export LLM_API_KEY="sk-..."
+# Standalone server (stdio for Claude Code)
+strix --mcp-server
+
+# HTTP server (for remote connections)
+strix --mcp-server --transport http --port 8080
+
+# Unix socket
+strix --mcp-server --transport socket --path /tmp/strix.sock
 ```
-
-### Codex-Specific Considerations
-
-- **Rate limits**: "Several hundred rounds per day for ChatGPT subscribers"
-- **Strengths**: Code understanding and generation
-- **Use case**: Code analysis, exploit development assistance
 
 ---
 
-## Google Gemini CLI Integration
+## Configuration Reference
 
-Gemini integration addresses [Issue #117](https://github.com/usestrix/strix/issues/117).
-
-### Current Status
-
-Gemini is already partially supported via LiteLLM:
-
-```bash
-export STRIX_LLM="gemini/gemini-2.0-flash"
-export GOOGLE_API_KEY="..."
-```
-
-### Full Gemini CLI Integration
-
-#### Option A: Direct LiteLLM (Already Available)
-
-```bash
-# Gemini 2.0 Flash (fast, cheap)
-export STRIX_LLM="gemini/gemini-2.0-flash"
-
-# Gemini 3.0 Pro (advanced reasoning)
-export STRIX_LLM="gemini/gemini-3.0-pro"
-
-export GOOGLE_API_KEY="your-api-key"
-```
-
-#### Option B: Gemini CLI as MCP Client
-
-```
-┌─────────────────┐         ┌─────────────────┐
-│  Gemini CLI     │  MCP    │  Strix MCP      │
-│  (orchestrator) │ ◀─────▶ │  Server         │
-└─────────────────┘         └─────────────────┘
-```
-
-#### Option C: Via zen-mcp-server
-
-Use zen-mcp to access Gemini models for validation/thinking:
-
-```
-Strix (Claude) → zen-mcp → Gemini Pro (validation)
-```
-
-### Gemini-Specific Features
-
-- **Long context**: 1M+ token context window
-- **Grounding**: Web search integration
-- **Thinking mode**: Deep reasoning for complex analysis
-
----
-
-## Configuration Design
-
-### Environment Variables
-
-```bash
-# MCP Server Configuration
-STRIX_MCP_ENABLED=true                    # Enable MCP features
-STRIX_MCP_SERVER_PORT=8080                # MCP server port
-STRIX_MCP_SERVER_SOCKET=/tmp/strix.sock   # Unix socket path
-STRIX_MCP_AUTH_TOKEN=...                  # Authentication token
-
-# MCP Client Configuration
-STRIX_MCP_SERVERS='[
-  {"name": "zen", "command": ["./zen-mcp-server/run-server.sh"]},
-  {"name": "custom", "url": "http://localhost:9000"}
-]'
-
-# Tool Exposure Configuration
-STRIX_MCP_EXPOSED_TOOLS="terminal_execute,browser_action,python_action,send_request"
-STRIX_MCP_BLOCKED_TOOLS="create_agent,agent_finish"
-
-# Multi-Model Configuration (for zen-mcp)
-ZEN_DEFAULT_MODEL="gemini/gemini-3.0-pro"
-ZEN_THINKING_MODEL="openai/o3"
-```
-
-### Configuration File (`strix.config.yaml`)
+### Full Configuration File: `strix.config.yaml`
 
 ```yaml
+# Strix Configuration with MCP and LLM Roles
+
+#──────────────────────────────────────────────────────────────────────
+# LLM ROLES
+# Define models for different purposes
+#──────────────────────────────────────────────────────────────────────
+llm:
+  roles:
+    primary:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+      api_key: ${ANTHROPIC_API_KEY}
+
+    fast:
+      provider: google
+      model: gemini-2.0-flash
+      api_key: ${GOOGLE_API_KEY}
+
+    local:
+      provider: ollama
+      model: llama3.1
+      base_url: ${OLLAMA_BASE_URL:-http://localhost:11434}
+
+    thinking:
+      provider: google
+      model: gemini-3.0-pro
+      api_key: ${GOOGLE_API_KEY}
+
+    coding:
+      provider: anthropic
+      model: claude-sonnet-4-20250514
+      api_key: ${ANTHROPIC_API_KEY}
+
+    validation:
+      provider: openai
+      model: gpt-5-turbo
+      api_key: ${OPENAI_API_KEY}
+
+  # Map tasks to roles
+  routing:
+    default: primary
+    quick_tasks: fast
+    planning: thinking
+    code_analysis: coding
+    finding_validation: validation
+
+    # Use local when available for these
+    prefer_local:
+      - quick_tasks
+      - progress_updates
+
+  # Cost controls
+  cost:
+    prefer_local: true
+    fast_threshold_tokens: 500
+    rate_limit_delay: 1.0
+
+#──────────────────────────────────────────────────────────────────────
+# MCP SERVER
+# Expose Strix tools via MCP
+#──────────────────────────────────────────────────────────────────────
 mcp:
   server:
-    enabled: true
+    enabled: false  # Enable with --mcp-server flag
+    transport: stdio  # stdio | http | socket
     port: 8080
-    socket: /tmp/strix-mcp.sock
-    auth:
-      type: token
-      token: ${STRIX_MCP_AUTH_TOKEN}
+    socket_path: /tmp/strix-mcp.sock
 
+    auth:
+      enabled: true
+      token: ${STRIX_MCP_TOKEN}
+
+    # Tools to expose
     exposed_tools:
       - terminal_execute
       - browser_action
       - python_action
       - str_replace_editor
-      - list_requests
       - send_request
+      - repeat_request
+      - list_requests
+      - view_request
       - create_vulnerability_report
+      - web_search
 
-    blocked_tools:
-      - create_agent
-      - agent_finish
-      - think
+#──────────────────────────────────────────────────────────────────────
+# ZEN-MCP INTEGRATION
+# Connect to zen-mcp-server for multi-model capabilities
+#──────────────────────────────────────────────────────────────────────
+zen_mcp:
+  enabled: false  # Enable with --enable-zen-mcp flag
 
-  clients:
-    - name: zen
-      type: subprocess
-      command: ["./zen-mcp-server/run-server.sh"]
-      tools:
-        - thinkdeep
-        - consensus
-        - codereview
-        - apilookup
+  connection:
+    type: socket  # socket | subprocess
+    socket_path: /tmp/zen-mcp.sock
+    # Or spawn as subprocess:
+    # command: ["./zen-mcp-server/run-server.sh"]
 
-    - name: custom
-      type: http
-      url: http://localhost:9000
-      auth:
-        type: bearer
-        token: ${CUSTOM_MCP_TOKEN}
+  # Which zen-mcp tools to use
+  tools:
+    - thinkdeep
+    - consensus
+    - codereview
+    - apilookup
 
-llm:
-  providers:
-    claude-code:
-      enabled: true
-      path: /usr/local/bin/claude
-      model: claude-sonnet-4.5
+  # When to automatically use zen-mcp
+  auto_use:
+    - finding_validation  # Cross-check vulns with consensus
+    - complex_analysis    # Use thinkdeep for complex bugs
+```
 
-    gemini:
-      enabled: true
-      model: gemini/gemini-3.0-pro
-      api_key: ${GOOGLE_API_KEY}
+### Environment Variables Reference
+
+```bash
+#──────────────────────────────────────────────────────────────────────
+# BASIC CONFIGURATION (Current behavior - unchanged)
+#──────────────────────────────────────────────────────────────────────
+STRIX_LLM="anthropic/claude-sonnet-4-20250514"
+LLM_API_KEY="sk-ant-..."
+
+#──────────────────────────────────────────────────────────────────────
+# LLM ROLES (Optional - for multi-model)
+#──────────────────────────────────────────────────────────────────────
+STRIX_LLM_PRIMARY="anthropic/claude-sonnet-4-20250514"
+STRIX_LLM_FAST="google/gemini-2.0-flash"
+STRIX_LLM_LOCAL="ollama/llama3.1"
+STRIX_LLM_THINKING="google/gemini-3.0-pro"
+STRIX_LLM_CODING="anthropic/claude-sonnet-4-20250514"
+STRIX_LLM_VALIDATION="openai/gpt-5-turbo"
+
+# API Keys for each provider
+ANTHROPIC_API_KEY="sk-ant-..."
+GOOGLE_API_KEY="..."
+OPENAI_API_KEY="sk-..."
+OLLAMA_BASE_URL="http://localhost:11434"
+
+#──────────────────────────────────────────────────────────────────────
+# MCP SERVER (For Option B - External Orchestration)
+#──────────────────────────────────────────────────────────────────────
+STRIX_MCP_SERVER_ENABLED=true
+STRIX_MCP_TRANSPORT="stdio"  # stdio | http | socket
+STRIX_MCP_PORT=8080
+STRIX_MCP_SOCKET="/tmp/strix-mcp.sock"
+STRIX_MCP_TOKEN="secure-token-here"
+
+#──────────────────────────────────────────────────────────────────────
+# ZEN-MCP CLIENT (For Option A - Enhanced Strix)
+#──────────────────────────────────────────────────────────────────────
+STRIX_ZEN_MCP_ENABLED=true
+STRIX_ZEN_MCP_SOCKET="/tmp/zen-mcp.sock"
 ```
 
 ---
 
 ## Implementation Phases
 
-### Phase 1: MCP Server Foundation
+### Phase 1: LLM Roles Configuration
+
+**Goal**: Support multiple models for different purposes
+
+**Tasks**:
+1. Create `llm.yaml` config schema
+2. Implement role-based model routing in `llm/llm.py`
+3. Add `--llm-config` CLI flag
+4. Support environment variable overrides
+
+**Deliverables**:
+- Users can define fast/local/thinking/coding models
+- Automatic routing based on task type
+
+### Phase 2: Strix as MCP Server
 
 **Goal**: Expose Strix tools via MCP for external orchestration
 
 **Tasks**:
-1. Create `strix/mcp/` module structure
-2. Implement MCP protocol handler (stdio/HTTP)
-3. Add tool schema translation (native → MCP)
-4. Implement authentication layer
-5. Add `--mcp-server` CLI flag
+1. Create `strix/mcp/server.py`
+2. Implement tool schema translation
+3. Add `--mcp-server` CLI flag
+4. Support stdio/HTTP/socket transports
 
 **Deliverables**:
-- Strix can run as MCP server
-- Claude Code can connect and invoke tools
+- `strix --mcp-server` exposes tools
+- Claude Code/Codex/Gemini can invoke Strix tools
 
-### Phase 2: MCP Client Integration
+### Phase 3: zen-mcp Client Integration
 
-**Goal**: Consume external MCP tools (zen-mcp-server)
+**Goal**: Use zen-mcp-server tools from within Strix
 
 **Tasks**:
-1. Implement MCP client with connection pooling
-2. Add MCP tool discovery and registration
-3. Modify tool executor to route MCP tools
-4. Add MCP tool invocation parsing
+1. Create `strix/mcp/client.py`
+2. Add zen-mcp tools to tool registry
+3. Implement connection management
+4. Add `--enable-zen-mcp` CLI flag
 
 **Deliverables**:
-- Strix can use zen-mcp tools (thinkdeep, consensus)
-- Multi-model validation workflows possible
+- Strix can use `thinkdeep`, `consensus`, etc.
+- Multi-model validation in native Strix mode
 
-### Phase 3: zen-mcp-server Integration
+### Phase 4: Documentation & Examples
 
-**Goal**: Deep integration with zen-mcp-server capabilities
+**Goal**: Make it easy to adopt
 
 **Tasks**:
-1. Bundle zen-mcp-server or document setup
-2. Add workflow templates for multi-model analysis
-3. Integrate `clink` for Claude Code/Codex subagents
-4. Add `apilookup` for dynamic API documentation
-
-**Deliverables**:
-- One-command setup for multi-model workflows
-- Pre-built templates for vulnerability validation
-
-### Phase 4: Native CLI Integration
-
-**Goal**: Direct integration with Claude Code, Codex, Gemini CLIs
-
-**Tasks**:
-1. Claude Code LLM provider wrapper
-2. Codex CLI integration
-3. Gemini CLI integration
-4. Unified configuration interface
-
-**Deliverables**:
-- API-key-free operation via Claude Code
-- Seamless model switching
-
----
-
-## Trade-offs and Considerations
-
-### Performance Impact
-
-| Operation | Native | Via MCP | Overhead |
-|-----------|--------|---------|----------|
-| Tool invocation | ~1ms | ~50-100ms | Protocol + serialization |
-| Tool discovery | Startup | Each connection | Negligible |
-| Context sharing | Direct | JSON serialization | ~10-50ms |
-
-**Mitigation**: Keep frequently-used tools native, use MCP for extended capabilities.
-
-### Complexity Trade-offs
-
-| Approach | Complexity | Flexibility | Performance |
-|----------|------------|-------------|-------------|
-| Native only | Low | Limited | Excellent |
-| MCP only | Medium | High | Good |
-| Hybrid (recommended) | Medium-High | Excellent | Excellent |
-
-### When to Use MCP vs Native
-
-**Use Native Tools**:
-- High-frequency operations (terminal, browser)
-- Security-critical operations (sandbox execution)
-- Operations requiring AgentState access
-- Performance-critical paths
-
-**Use MCP Tools**:
-- Multi-model validation
-- Extended reasoning (thinkdeep)
-- External tool integration
-- Ecosystem tools (apilookup)
+1. Write setup guides for both options
+2. Create example configurations
+3. Add workflow templates
+4. Document security considerations
 
 ---
 
@@ -740,47 +726,55 @@ llm:
 
 ### MCP Server Security
 
-1. **Authentication**: Require token-based auth for all connections
-2. **Authorization**: Role-based tool access (mirror native TOOL_PROFILES)
-3. **Sandboxing**: MCP tool calls execute in existing sandbox
-4. **Rate limiting**: Prevent abuse via connection limits
+1. **Authentication**: Token-based auth required for non-stdio transports
+2. **Tool filtering**: Only expose safe subset of tools
+3. **Sandbox enforcement**: All tool execution in Docker sandbox
+4. **Rate limiting**: Prevent abuse via request limits
 
-### MCP Client Security
+### zen-mcp Security
 
-1. **Server validation**: Only connect to configured MCP servers
-2. **Tool whitelisting**: Explicitly list allowed external tools
-3. **Result validation**: Sanitize external tool results
-4. **Timeout enforcement**: Prevent hung connections
+1. **Local only**: zen-mcp should run locally, not exposed to network
+2. **API key isolation**: Each provider has separate credentials
+3. **Model access control**: Define which models are available
 
-### Sensitive Data Handling
+### Sensitive Data
 
-1. **API keys**: Never expose via MCP tool results
-2. **Scan data**: Scope MCP access to current engagement
-3. **Credentials**: Mask in tool invocation logs
-4. **Reports**: Access control for vulnerability data
+1. **API keys**: Never log or expose via MCP results
+2. **Scan data**: Scope to current engagement
+3. **Credentials found**: Mask in all outputs
 
 ---
 
 ## Summary
 
-This integration plan enables Strix to:
+### Decision Matrix
 
-1. **Expose tools via MCP** for orchestration by Claude Code, Codex, Gemini
-2. **Consume MCP tools** from zen-mcp-server for multi-model workflows
-3. **Maintain performance** by keeping native tools as the fast path
-4. **Preserve simplicity** through clean abstractions and configuration-driven features
+| Use Case | Recommended Option |
+|----------|-------------------|
+| Maximum scan speed | Option A (Strix-native) |
+| Single model, simple setup | Option A (basic) |
+| Multi-model validation | Option A + zen-mcp |
+| Conversational workflow | Option B (Claude Code) |
+| Claude Code/Codex users | Option B |
+| Cost optimization with local models | Either + LLM roles |
 
-The hybrid approach ensures that:
-- Existing users see no change in behavior
-- Power users can enable MCP for advanced workflows
-- The codebase remains maintainable without MCP lock-in
+### Key Takeaways
 
-### Next Steps
+1. **zen-mcp-server handles multi-model orchestration** - don't rebuild it in Strix
+2. **Strix stays focused on pentest tools** - fast native execution
+3. **LLM roles configuration** enables model specialization in either option
+4. **Two clean deployment modes** instead of one complex hybrid
 
-1. Review and approve this plan
-2. Prioritize phases based on user demand
-3. Begin Phase 1 implementation
-4. Gather feedback and iterate
+### Files to Create/Modify
+
+| File | Change |
+|------|--------|
+| `strix/mcp/server.py` | New - MCP server implementation |
+| `strix/mcp/client.py` | New - zen-mcp client |
+| `strix/llm/roles.py` | New - LLM role routing |
+| `strix/llm/config.py` | Modify - Add role config support |
+| `strix/tools/registry.py` | Modify - MCP schema generation |
+| `strix/interface/main.py` | Modify - Add CLI flags |
 
 ---
 
@@ -789,7 +783,7 @@ The hybrid approach ensures that:
 - [Model Context Protocol Specification](https://modelcontextprotocol.io/)
 - [zen-mcp-server](https://github.com/BeehiveInnovations/zen-mcp-server)
 - [LiteLLM Documentation](https://docs.litellm.ai/)
-- [Claude Code Documentation](https://docs.anthropic.com/en/docs/claude-code)
+- [Claude Code MCP Guide](https://docs.anthropic.com/en/docs/claude-code/mcp)
 - [Issue #31: Codex Integration](https://github.com/usestrix/strix/issues/31)
 - [Issue #66: Claude Code Support](https://github.com/usestrix/strix/issues/66)
 - [Issue #109: MCP Support](https://github.com/usestrix/strix/issues/109)
