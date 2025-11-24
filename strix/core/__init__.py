@@ -3,7 +3,7 @@
 Core components for target analysis and adaptive scanning:
 - TCI (Target Complexity Index): Compute complexity scores from target fingerprints
 - MITRE ATT&CK: TTP mapping and IoC classification
-- OWASP: Top 10 reference appendices (Web, API, LLM)
+- OWASP: Top 10 reference appendices (Web, API, LLM, MCP) - 2025 editions
 - Models: Data structures for fingerprints, TCI results, and scan plans
 """
 
@@ -31,6 +31,7 @@ from strix.core.owasp import (
     generate_report_appendix,
     get_api_top10,
     get_llm_top10,
+    get_mcp_top10,
     get_web_top10,
     map_vulnerability_to_owasp,
 )
@@ -72,6 +73,7 @@ __all__ = [
     "generate_report_appendix",
     "get_api_top10",
     "get_llm_top10",
+    "get_mcp_top10",
     "get_web_top10",
     "map_vulnerability_to_owasp",
 ]

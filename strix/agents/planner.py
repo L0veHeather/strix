@@ -108,9 +108,9 @@ class TTPReference:
 class OWASPReference:
     """OWASP category reference for a scan step."""
 
-    category_id: str  # e.g., "A01:2021", "API1:2023", "LLM01:2025"
+    category_id: str  # e.g., "A01:2025", "API1:2025", "LLM01:2025", "MCP01:2025"
     category_name: str
-    standard: str  # "Web Top 10", "API Top 10", "LLM Top 10"
+    standard: str  # "Web Top 10", "API Top 10", "LLM Top 10", "MCP Top 10"
     severity: str = ""
     url: str = ""
 
@@ -412,57 +412,72 @@ MODULE_MITRE_TTPS: dict[str, list[dict[str, str]]] = {
 # =============================================================================
 MODULE_OWASP_REFS: dict[str, list[dict[str, str]]] = {
     "sql_injection": [
-        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "critical"},
+        {"id": "A03:2025", "name": "Injection", "standard": "Web Top 10 2025", "severity": "critical"},
     ],
     "xss": [
-        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "A03:2025", "name": "Injection", "standard": "Web Top 10 2025", "severity": "high"},
     ],
     "authentication_jwt": [
-        {"id": "A07:2021", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "API2:2023", "name": "Broken Authentication", "standard": "API Top 10 2023", "severity": "critical"},
+        {"id": "A07:2025", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "API2:2025", "name": "Broken Authentication", "standard": "API Top 10 2025", "severity": "critical"},
     ],
     "idor": [
-        {"id": "A01:2021", "name": "Broken Access Control", "standard": "Web Top 10 2021", "severity": "critical"},
-        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "critical"},
+        {"id": "A01:2025", "name": "Broken Access Control", "standard": "Web Top 10 2025", "severity": "critical"},
+        {"id": "API1:2025", "name": "Broken Object Level Authorization", "standard": "API Top 10 2025", "severity": "critical"},
     ],
     "ssrf": [
-        {"id": "A10:2021", "name": "Server-Side Request Forgery", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "API7:2023", "name": "Server Side Request Forgery", "standard": "API Top 10 2023", "severity": "high"},
+        {"id": "A10:2025", "name": "Server-Side Request Forgery", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "API7:2025", "name": "Server Side Request Forgery", "standard": "API Top 10 2025", "severity": "high"},
+        {"id": "MCP05:2025", "name": "Server-Side Request Forgery via Tools", "standard": "MCP Top 10 2025", "severity": "high"},
     ],
     "xxe": [
-        {"id": "A05:2021", "name": "Security Misconfiguration", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "A05:2025", "name": "Security Misconfiguration", "standard": "Web Top 10 2025", "severity": "high"},
     ],
     "csrf": [
-        {"id": "A01:2021", "name": "Broken Access Control", "standard": "Web Top 10 2021", "severity": "medium"},
+        {"id": "A01:2025", "name": "Broken Access Control", "standard": "Web Top 10 2025", "severity": "medium"},
     ],
     "rce": [
-        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "critical"},
+        {"id": "A03:2025", "name": "Injection", "standard": "Web Top 10 2025", "severity": "critical"},
     ],
     "graphql_security": [
-        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "high"},
+        {"id": "A03:2025", "name": "Injection", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "API1:2025", "name": "Broken Object Level Authorization", "standard": "API Top 10 2025", "severity": "high"},
     ],
     "api_security": [
-        {"id": "API1:2023", "name": "Broken Object Level Authorization", "standard": "API Top 10 2023", "severity": "critical"},
-        {"id": "API5:2023", "name": "Broken Function Level Authorization", "standard": "API Top 10 2023", "severity": "high"},
+        {"id": "API1:2025", "name": "Broken Object Level Authorization", "standard": "API Top 10 2025", "severity": "critical"},
+        {"id": "API5:2025", "name": "Broken Function Level Authorization", "standard": "API Top 10 2025", "severity": "high"},
     ],
     "business_logic": [
-        {"id": "A04:2021", "name": "Insecure Design", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "API6:2023", "name": "Unrestricted Access to Sensitive Business Flows", "standard": "API Top 10 2023", "severity": "medium"},
+        {"id": "A04:2025", "name": "Insecure Design", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "API6:2025", "name": "Unrestricted Access to Sensitive Business Flows", "standard": "API Top 10 2025", "severity": "medium"},
     ],
     "file_upload": [
-        {"id": "A03:2021", "name": "Injection", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "A08:2021", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "A03:2025", "name": "Injection", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "A08:2025", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2025", "severity": "high"},
     ],
     "deserialization": [
-        {"id": "A08:2021", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2021", "severity": "high"},
+        {"id": "A08:2025", "name": "Software and Data Integrity Failures", "standard": "Web Top 10 2025", "severity": "high"},
     ],
     "oauth_testing": [
-        {"id": "A07:2021", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2021", "severity": "high"},
-        {"id": "API2:2023", "name": "Broken Authentication", "standard": "API Top 10 2023", "severity": "critical"},
+        {"id": "A07:2025", "name": "Identification and Authentication Failures", "standard": "Web Top 10 2025", "severity": "high"},
+        {"id": "API2:2025", "name": "Broken Authentication", "standard": "API Top 10 2025", "severity": "critical"},
     ],
     "cloud_security": [
-        {"id": "A05:2021", "name": "Security Misconfiguration", "standard": "Web Top 10 2021", "severity": "medium"},
+        {"id": "A05:2025", "name": "Security Misconfiguration", "standard": "Web Top 10 2025", "severity": "medium"},
+    ],
+    "prompt_injection": [
+        {"id": "LLM01:2025", "name": "Prompt Injection", "standard": "LLM Top 10 2025", "severity": "critical"},
+        {"id": "MCP01:2025", "name": "Tool Injection", "standard": "MCP Top 10 2025", "severity": "critical"},
+    ],
+    "llm_security": [
+        {"id": "LLM01:2025", "name": "Prompt Injection", "standard": "LLM Top 10 2025", "severity": "critical"},
+        {"id": "LLM02:2025", "name": "Sensitive Information Disclosure", "standard": "LLM Top 10 2025", "severity": "high"},
+        {"id": "LLM06:2025", "name": "Excessive Agency", "standard": "LLM Top 10 2025", "severity": "critical"},
+    ],
+    "mcp_security": [
+        {"id": "MCP01:2025", "name": "Tool Injection", "standard": "MCP Top 10 2025", "severity": "critical"},
+        {"id": "MCP02:2025", "name": "Resource Access Control Bypass", "standard": "MCP Top 10 2025", "severity": "critical"},
+        {"id": "MCP06:2025", "name": "Insecure Tool Execution", "standard": "MCP Top 10 2025", "severity": "critical"},
     ],
 }
 
