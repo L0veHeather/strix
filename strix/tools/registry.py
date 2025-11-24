@@ -2,6 +2,7 @@ import inspect
 import logging
 import os
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import wraps
 from inspect import signature
@@ -11,7 +12,57 @@ from typing import Any
 
 tools: list[dict[str, Any]] = []
 _tools_by_name: dict[str, Callable[..., Any]] = {}
+_tool_metadata: dict[str, "ToolMetadata"] = {}
 logger = logging.getLogger(__name__)
+
+
+class ToolPriority(str, Enum):
+    """Priority level for tool execution in scan plans."""
+
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    OPTIONAL = "optional"
+
+
+@dataclass
+class ToolMetadata:
+    """Extended metadata for tools supporting adaptive scanning.
+
+    This metadata enables the ScanPlanner to make intelligent decisions
+    about tool selection, ordering, and resource allocation.
+    """
+
+    name: str
+    priority: ToolPriority = ToolPriority.MEDIUM
+    safe_mode: bool = True
+    timeout_seconds: int = 300
+    max_iterations: int = 100
+    quota: int = 50  # Max requests/operations per invocation
+    parallelizable: bool = True
+    requires_auth: bool = False
+    risk_level: str = "low"  # low, medium, high
+    vulnerability_types: list[str] = field(default_factory=list)
+    tags: list[str] = field(default_factory=list)
+    dependencies: list[str] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Convert to dictionary for serialization."""
+        return {
+            "name": self.name,
+            "priority": self.priority.value,
+            "safe_mode": self.safe_mode,
+            "timeout_seconds": self.timeout_seconds,
+            "max_iterations": self.max_iterations,
+            "quota": self.quota,
+            "parallelizable": self.parallelizable,
+            "requires_auth": self.requires_auth,
+            "risk_level": self.risk_level,
+            "vulnerability_types": self.vulnerability_types,
+            "tags": self.tags,
+            "dependencies": self.dependencies,
+        }
 
 
 class AgentRole(str, Enum):
@@ -177,15 +228,70 @@ def _get_module_name(func: Callable[..., Any]) -> str:
 
 
 def register_tool(
-    func: Callable[..., Any] | None = None, *, sandbox_execution: bool = True
+    func: Callable[..., Any] | None = None,
+    *,
+    sandbox_execution: bool = True,
+    priority: ToolPriority | str = ToolPriority.MEDIUM,
+    safe_mode: bool = True,
+    timeout_seconds: int = 300,
+    max_iterations: int = 100,
+    quota: int = 50,
+    parallelizable: bool = True,
+    requires_auth: bool = False,
+    risk_level: str = "low",
+    vulnerability_types: list[str] | None = None,
+    tags: list[str] | None = None,
+    dependencies: list[str] | None = None,
 ) -> Callable[..., Any]:
+    """Register a tool with optional metadata for adaptive scanning.
+
+    Args:
+        func: The function to register (used when decorator has no args)
+        sandbox_execution: Whether tool runs in sandbox
+        priority: Tool priority level (critical, high, medium, low, optional)
+        safe_mode: Whether tool is safe for production environments
+        timeout_seconds: Default timeout for tool execution
+        max_iterations: Maximum iterations allowed
+        quota: Maximum requests/operations per invocation
+        parallelizable: Whether tool can run in parallel with others
+        requires_auth: Whether tool requires authentication to target
+        risk_level: Risk level (low, medium, high)
+        vulnerability_types: Vulnerability types this tool can detect
+        tags: Tags for filtering and categorization
+        dependencies: Other tools this tool depends on
+    """
     def decorator(f: Callable[..., Any]) -> Callable[..., Any]:
+        # Convert string priority to enum if needed
+        tool_priority = (
+            ToolPriority(priority) if isinstance(priority, str) else priority
+        )
+
         func_dict = {
             "name": f.__name__,
             "function": f,
             "module": _get_module_name(f),
             "sandbox_execution": sandbox_execution,
+            "priority": tool_priority.value,
+            "safe_mode": safe_mode,
         }
+
+        # Create and store tool metadata
+        metadata = ToolMetadata(
+            name=f.__name__,
+            priority=tool_priority,
+            safe_mode=safe_mode,
+            timeout_seconds=timeout_seconds,
+            max_iterations=max_iterations,
+            quota=quota,
+            parallelizable=parallelizable,
+            requires_auth=requires_auth,
+            risk_level=risk_level,
+            vulnerability_types=vulnerability_types or [],
+            tags=tags or [],
+            dependencies=dependencies or [],
+        )
+        _tool_metadata[f.__name__] = metadata
+        func_dict["metadata"] = metadata
 
         sandbox_mode = os.getenv("STRIX_SANDBOX_MODE", "false").lower() == "true"
         if not sandbox_mode:
@@ -273,8 +379,10 @@ def get_tools_prompt() -> str:
 
 
 def clear_registry() -> None:
+    """Clear all registered tools and metadata."""
     tools.clear()
     _tools_by_name.clear()
+    _tool_metadata.clear()
 
 
 def is_tool_allowed_for_role(tool_name: str, role: AgentRole) -> bool:
@@ -420,3 +528,274 @@ def get_parallelization_strategy(tool_names: list[str]) -> dict[str, list[str]]:
 def get_available_roles() -> list[str]:
     """Get list of available agent roles."""
     return [role.value for role in AgentRole]
+
+
+# =============================================================================
+# Tool Metadata Functions for Adaptive Scanning
+# =============================================================================
+
+
+def get_tool_metadata(tool_name: str) -> ToolMetadata | None:
+    """Get metadata for a specific tool.
+
+    Args:
+        tool_name: Name of the tool
+
+    Returns:
+        ToolMetadata if found, None otherwise
+    """
+    return _tool_metadata.get(tool_name)
+
+
+def get_all_tool_metadata() -> dict[str, ToolMetadata]:
+    """Get metadata for all registered tools.
+
+    Returns:
+        Dictionary mapping tool names to their metadata
+    """
+    return _tool_metadata.copy()
+
+
+def get_tools_by_priority(priority: ToolPriority | str) -> list[dict[str, Any]]:
+    """Get all tools with a specific priority.
+
+    Args:
+        priority: Priority level to filter by
+
+    Returns:
+        List of tool dictionaries matching the priority
+    """
+    if isinstance(priority, str):
+        priority = ToolPriority(priority)
+
+    return [
+        tool for tool in tools
+        if tool.get("priority") == priority.value
+    ]
+
+
+def get_safe_mode_tools() -> list[dict[str, Any]]:
+    """Get all tools marked as safe mode.
+
+    Returns:
+        List of tool dictionaries that are safe mode
+    """
+    return [tool for tool in tools if tool.get("safe_mode", True)]
+
+
+def get_tools_by_vulnerability_type(vuln_type: str) -> list[dict[str, Any]]:
+    """Get tools that can detect a specific vulnerability type.
+
+    Args:
+        vuln_type: Vulnerability type to search for
+
+    Returns:
+        List of matching tool dictionaries
+    """
+    result = []
+    vuln_lower = vuln_type.lower()
+
+    for tool in tools:
+        metadata = tool.get("metadata")
+        if metadata and hasattr(metadata, "vulnerability_types"):
+            if any(vuln_lower in v.lower() for v in metadata.vulnerability_types):
+                result.append(tool)
+
+    return result
+
+
+def get_tools_by_tags(tags: list[str]) -> list[dict[str, Any]]:
+    """Get tools matching any of the specified tags.
+
+    Args:
+        tags: List of tags to match
+
+    Returns:
+        List of matching tool dictionaries
+    """
+    result = []
+    tags_lower = {t.lower() for t in tags}
+
+    for tool in tools:
+        metadata = tool.get("metadata")
+        if metadata and hasattr(metadata, "tags"):
+            tool_tags = {t.lower() for t in metadata.tags}
+            if tool_tags & tags_lower:
+                result.append(tool)
+
+    return result
+
+
+def get_tool_dependencies(tool_name: str) -> list[str]:
+    """Get dependencies for a specific tool.
+
+    Args:
+        tool_name: Name of the tool
+
+    Returns:
+        List of tool names this tool depends on
+    """
+    metadata = _tool_metadata.get(tool_name)
+    if metadata:
+        return metadata.dependencies
+    return []
+
+
+def get_tools_for_scan_plan(
+    safe_mode: bool = True,
+    max_risk_level: str = "medium",
+    priority_threshold: ToolPriority | None = None,
+) -> list[dict[str, Any]]:
+    """Get tools suitable for a scan plan based on constraints.
+
+    Args:
+        safe_mode: Only include safe mode tools
+        max_risk_level: Maximum risk level (low, medium, high)
+        priority_threshold: Minimum priority level to include
+
+    Returns:
+        List of tool dictionaries meeting the criteria
+    """
+    risk_levels = {"low": 0, "medium": 1, "high": 2}
+    max_risk_value = risk_levels.get(max_risk_level, 1)
+
+    priority_values = {
+        ToolPriority.CRITICAL: 0,
+        ToolPriority.HIGH: 1,
+        ToolPriority.MEDIUM: 2,
+        ToolPriority.LOW: 3,
+        ToolPriority.OPTIONAL: 4,
+    }
+
+    result = []
+    for tool in tools:
+        metadata = tool.get("metadata")
+        if not metadata:
+            continue
+
+        # Check safe mode
+        if safe_mode and not metadata.safe_mode:
+            continue
+
+        # Check risk level
+        tool_risk = risk_levels.get(metadata.risk_level, 1)
+        if tool_risk > max_risk_value:
+            continue
+
+        # Check priority threshold
+        if priority_threshold:
+            threshold_value = priority_values.get(priority_threshold, 2)
+            tool_priority_value = priority_values.get(metadata.priority, 2)
+            if tool_priority_value > threshold_value:
+                continue
+
+        result.append(tool)
+
+    return result
+
+
+def update_tool_metadata(
+    tool_name: str,
+    priority: ToolPriority | None = None,
+    safe_mode: bool | None = None,
+    timeout_seconds: int | None = None,
+    quota: int | None = None,
+) -> bool:
+    """Update metadata for an existing tool.
+
+    Args:
+        tool_name: Name of the tool to update
+        priority: New priority level
+        safe_mode: New safe mode setting
+        timeout_seconds: New timeout
+        quota: New quota
+
+    Returns:
+        True if updated successfully, False if tool not found
+    """
+    metadata = _tool_metadata.get(tool_name)
+    if not metadata:
+        return False
+
+    if priority is not None:
+        metadata.priority = priority
+
+    if safe_mode is not None:
+        metadata.safe_mode = safe_mode
+
+    if timeout_seconds is not None:
+        metadata.timeout_seconds = timeout_seconds
+
+    if quota is not None:
+        metadata.quota = quota
+
+    # Update corresponding tool dict
+    for tool in tools:
+        if tool.get("name") == tool_name:
+            if priority is not None:
+                tool["priority"] = priority.value
+            if safe_mode is not None:
+                tool["safe_mode"] = safe_mode
+            break
+
+    return True
+
+
+def get_execution_order(tool_names: list[str]) -> list[str]:
+    """Determine optimal execution order based on dependencies and priority.
+
+    Args:
+        tool_names: List of tool names to order
+
+    Returns:
+        Ordered list of tool names respecting dependencies
+    """
+    # Build dependency graph
+    dependencies: dict[str, set[str]] = {}
+    priorities: dict[str, int] = {}
+
+    priority_values = {
+        ToolPriority.CRITICAL: 0,
+        ToolPriority.HIGH: 1,
+        ToolPriority.MEDIUM: 2,
+        ToolPriority.LOW: 3,
+        ToolPriority.OPTIONAL: 4,
+    }
+
+    for name in tool_names:
+        metadata = _tool_metadata.get(name)
+        if metadata:
+            # Only include dependencies that are in our list
+            deps = set(metadata.dependencies) & set(tool_names)
+            dependencies[name] = deps
+            priorities[name] = priority_values.get(metadata.priority, 2)
+        else:
+            dependencies[name] = set()
+            priorities[name] = 2  # Default to medium
+
+    # Topological sort with priority ordering
+    result: list[str] = []
+    remaining = set(tool_names)
+
+    while remaining:
+        # Find tools with no unsatisfied dependencies
+        ready = []
+        for name in remaining:
+            unsatisfied = dependencies[name] - set(result)
+            if not unsatisfied:
+                ready.append(name)
+
+        if not ready:
+            # Circular dependency - just add remaining tools
+            logger.warning(f"Circular dependency detected among: {remaining}")
+            ready = list(remaining)
+
+        # Sort ready tools by priority (lower value = higher priority)
+        ready.sort(key=lambda x: priorities.get(x, 2))
+
+        # Add highest priority ready tool
+        chosen = ready[0]
+        result.append(chosen)
+        remaining.remove(chosen)
+
+    return result
