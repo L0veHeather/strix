@@ -357,7 +357,30 @@ class BaseAgent(metaclass=AgentMeta):
         self.state.add_message("user", task)
 
     async def _process_iteration(self, tracer: Optional["Tracer"]) -> bool:
-        response = await self.llm.generate(self.state.get_conversation_history())
+        try:
+            # Add timeout protection for LLM requests
+            # Use config timeout + 60s buffer to allow LLM's own timeout to trigger first
+            timeout_seconds = self.llm.config.timeout + 60
+            
+            response = await asyncio.wait_for(
+                self.llm.generate(self.state.get_conversation_history()),
+                timeout=timeout_seconds
+            )
+        except asyncio.TimeoutError:
+            error_msg = f"LLM request timed out after {timeout_seconds}s"
+            logger.error(f"Agent {self.state.agent_id}: {error_msg}")
+            self.state.add_error(error_msg)
+            
+            # If this is a sub-agent, gracefully finish instead of crashing
+            if self.state.parent_id:
+                logger.info(f"Sub-agent {self.state.agent_id} finishing due to timeout")
+                self.state.set_completed({"success": False, "error": error_msg})
+                if tracer:
+                    tracer.update_agent_status(self.state.agent_id, "failed", error_msg)
+                return True  # Signal to finish
+            
+            # For root agent, re-raise to let higher level handle it
+            raise LLMRequestFailedError(error_msg) from None
 
         content_stripped = (response.content or "").strip()
 

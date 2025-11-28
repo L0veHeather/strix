@@ -191,7 +191,31 @@ def create_agent(
     name: str,
     inherit_context: bool = True,
     prompt_modules: str | None = None,
+    timeout_minutes: int | None = None,  # Default from env or 30 minutes
 ) -> dict[str, Any]:
+    """Create a new sub-agent to handle a delegated task.
+    
+    Args:
+        agent_state: Current agent's state
+        task: Task description for the new agent
+        name: Name for the new agent
+        inherit_context: Whether to inherit conversation context from parent
+        prompt_modules: Comma-separated list of prompt modules to load
+        timeout_minutes: Maximum runtime in minutes (default: AGENT_TIMEOUT_MINUTES env or 30)
+        
+    Returns:
+        Dict with success status, agent_id, and agent info
+        
+    Note:
+        The agent will be automatically terminated if it runs longer than timeout_minutes.
+        This prevents hung agents from blocking the scan indefinitely.
+    """
+    import os
+    
+    # Get timeout from parameter, env var, or default
+    if timeout_minutes is None:
+        timeout_minutes = int(os.getenv("AGENT_TIMEOUT_MINUTES", "30"))
+    
     try:
         parent_id = agent_state.agent_id
 
@@ -265,6 +289,26 @@ def create_agent(
         )
         thread.start()
         _running_agents[state.agent_id] = thread
+        
+        # Start timeout monitoring thread
+        def _monitor_timeout():
+            import time
+            time.sleep(timeout_minutes * 60)
+            
+            # Check if agent is still running
+            if state.agent_id in _running_agents:
+                logger.warning(
+                    f"Agent {state.agent_id} ({name}) timed out after {timeout_minutes} minutes. "
+                    "Forcing termination."
+                )
+                stop_agent(state.agent_id)
+        
+        monitor_thread = threading.Thread(
+            target=_monitor_timeout,
+            daemon=True,
+            name=f"Monitor-{name}-{state.agent_id}"
+        )
+        monitor_thread.start()
 
     except Exception as e:  # noqa: BLE001
         return {"success": False, "error": f"Failed to create agent: {e}", "agent_id": None}
