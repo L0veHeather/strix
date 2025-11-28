@@ -60,7 +60,7 @@ class ScopeConfigParser:
     Supports YAML, JSON, and CSV formats.
     """
 
-    SUPPORTED_FORMATS = {".yaml", ".yml", ".json", ".csv"}
+    SUPPORTED_FORMATS = {".yaml", ".yml", ".json", ".csv", ".txt"}
 
     def __init__(self) -> None:
         self._env_vars_resolved: dict[str, str] = {}
@@ -96,6 +96,8 @@ class ScopeConfigParser:
                 config = self._parse_json(path)
             elif suffix == ".csv":
                 config = self._parse_csv(path)
+            elif suffix == ".txt":
+                config = self._parse_txt(path)
             else:
                 raise ScopeParseError(f"Unknown format: {suffix}")
 
@@ -182,13 +184,91 @@ class ScopeConfigParser:
             targets=targets,
         )
 
+    def _parse_txt(self, path: Path) -> ScopeConfig:
+        """
+        Parse TXT configuration file.
+
+        Expects one target per line. Lines starting with # are comments.
+        """
+        targets: list[TargetDefinition] = []
+
+        with path.open(encoding="utf-8") as f:
+            for line_num, line in enumerate(f, start=1):
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+
+                try:
+                    target = self._parse_txt_line(line)
+                    targets.append(target)
+                except Exception as e:
+                    raise ScopeParseError(
+                        f"Error parsing line: {e}", str(path), line_num
+                    ) from e
+
+        # Create minimal metadata for TXT files
+        metadata = ScopeMetadata(
+            engagement_name=path.stem,
+            engagement_type=EngagementType.INTERNAL,
+        )
+
+        return ScopeConfig(
+            metadata=metadata,
+            settings=ScopeSettings(),
+            targets=targets,
+        )
+
+    def _infer_target_details(self, target_value: str, target_type: TargetType | None = None) -> dict[str, Any]:
+        """Infer target details (host, url, repo, path) from value and type."""
+        host = None
+        url = None
+        repo = None
+        local_path = None
+
+        if target_type in {TargetType.INFRASTRUCTURE, TargetType.NETWORK_DEVICE}:
+            host = target_value
+        elif target_type in {TargetType.WEB_APPLICATION, TargetType.API}:
+            url = target_value
+        elif target_type == TargetType.REPOSITORY:
+            repo = target_value
+        elif target_type == TargetType.LOCAL_CODE:
+            local_path = target_value
+        else:
+            # Try to infer from value
+            if target_value.startswith(("http://", "https://")):
+                url = target_value
+                if not target_type:
+                    target_type = TargetType.WEB_APPLICATION
+            elif target_value.startswith(("git@", "https://github.com", "https://gitlab.com")):
+                repo = target_value
+                if not target_type:
+                    target_type = TargetType.REPOSITORY
+            elif target_value.startswith(("./", "/")):
+                local_path = target_value
+                if not target_type:
+                    target_type = TargetType.LOCAL_CODE
+            else:
+                host = target_value
+                if not target_type:
+                    target_type = TargetType.INFRASTRUCTURE
+
+        return {
+            "host": host,
+            "url": url,
+            "repo": repo,
+            "path": local_path,
+            "type": target_type,
+        }
+
     def _parse_csv_row(self, row: dict[str, str]) -> TargetDefinition:
         """Parse a single CSV row into a TargetDefinition."""
-        target_type_str = row.get("type", "infrastructure").strip()
-        try:
-            target_type = TargetType(target_type_str)
-        except ValueError:
-            target_type = TargetType.INFRASTRUCTURE
+        target_type_str = row.get("type", "").strip()
+        target_type = None
+        if target_type_str:
+            try:
+                target_type = TargetType(target_type_str)
+            except ValueError:
+                pass
 
         # Parse ports (semicolon-separated)
         ports: list[int] = []
@@ -230,42 +310,36 @@ class ScopeConfigParser:
 
         # Determine target identifier based on type
         target_value = row.get("target", "").strip()
-        host = None
-        url = None
-        repo = None
-        local_path = None
-
-        if target_type in {TargetType.INFRASTRUCTURE, TargetType.NETWORK_DEVICE}:
-            host = target_value
-        elif target_type in {TargetType.WEB_APPLICATION, TargetType.API}:
-            url = target_value
-        elif target_type == TargetType.REPOSITORY:
-            repo = target_value
-        elif target_type == TargetType.LOCAL_CODE:
-            local_path = target_value
-        else:
-            # Try to infer from value
-            if target_value.startswith(("http://", "https://")):
-                url = target_value
-            elif target_value.startswith(("git@", "https://github.com", "https://gitlab.com")):
-                repo = target_value
-            elif target_value.startswith(("./", "/")):
-                local_path = target_value
-            else:
-                host = target_value
+        details = self._infer_target_details(target_value, target_type)
 
         return TargetDefinition(
-            host=host,
-            url=url,
-            repo=repo,
-            path=local_path,
+            host=details["host"],
+            url=details["url"],
+            repo=details["repo"],
+            path=details["path"],
             name=row.get("name", target_value).strip(),
-            type=target_type,
+            type=details["type"] or TargetType.INFRASTRUCTURE,
             network=row.get("network", "").strip() or None,
             ports=ports,
             tags=tags,
             focus_areas=focus_areas,
             credentials=credentials,
+        )
+
+    def _parse_txt_line(self, line: str) -> TargetDefinition:
+        """Parse a single line from TXT file into a TargetDefinition."""
+        # Simple format: just the target value
+        target_value = line.strip()
+        details = self._infer_target_details(target_value)
+
+        return TargetDefinition(
+            host=details["host"],
+            url=details["url"],
+            repo=details["repo"],
+            path=details["path"],
+            name=target_value,
+            type=details["type"] or TargetType.INFRASTRUCTURE,
+            tags=["imported-from-txt"],
         )
 
     def _build_config(self, data: dict[str, Any], file_path: str | None = None) -> ScopeConfig:
