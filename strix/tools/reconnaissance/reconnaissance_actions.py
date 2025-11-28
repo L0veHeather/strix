@@ -89,7 +89,8 @@ def analyze_javascript_routes(
         # Step 4: Agent validates routes
         final_result = validate_discovered_routes(
             routes=discovered_routes,
-            source_file="main.js"
+            source_file="main.js",
+            base_url="https://api.example.com"
         )
         ```
     
