@@ -41,12 +41,12 @@ Unlike traditional scanners that rely on static rules, Strix uses Large Language
 
 ### Install via pipx (Recommended)
 ```bash
-pipx install strix-agent
+pipx install .
 ```
 
 ### Install via pip
 ```bash
-pip install strix-agent
+pip install .
 ```
 
 ---
