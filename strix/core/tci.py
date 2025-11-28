@@ -285,7 +285,7 @@ MODULE_RECOMMENDATIONS: dict[str, list[str]] = {
     "has_oauth": ["oauth_testing", "authentication_jwt"],
     "has_graphql": ["graphql_security", "idor"],
     "has_websocket": ["websocket_testing"],
-    "has_database": ["sql_injection"],
+    "has_database": ["sql_injection.detection", "sql_injection.exploitation"],
     "has_file_upload": ["file_upload", "xxe"],
     "has_api": ["api_security", "idor", "business_logic"],
     "has_xml": ["xxe"],
@@ -293,6 +293,7 @@ MODULE_RECOMMENDATIONS: dict[str, list[str]] = {
     "has_ssrf_surface": ["ssrf"],
     "has_rce_surface": ["rce"],
     "has_cloud": ["cloud_security"],
+    "has_user_input": ["xss.reflected", "xss.stored", "xss.dom"],
 }
 
 

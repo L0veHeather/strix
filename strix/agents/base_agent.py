@@ -9,11 +9,13 @@ if TYPE_CHECKING:
     from strix.telemetry.tracer import Tracer
 
 from jinja2 import (
+    ChoiceLoader,
     Environment,
     FileSystemLoader,
     select_autoescape,
 )
 
+from strix.core.plugin import get_plugin_manager, PluginPromptLoader
 from strix.llm import LLM, LLMConfig, LLMRequestFailedError
 from strix.llm.utils import clean_content
 from strix.tools import process_tool_invocations
@@ -38,8 +40,12 @@ class AgentMeta(type):
         prompt_dir = agents_dir / name
 
         new_cls.agent_name = name
+        
+        fs_loader = FileSystemLoader(prompt_dir)
+        plugin_loader = PluginPromptLoader(get_plugin_manager())
+        
         new_cls.jinja_env = Environment(
-            loader=FileSystemLoader(prompt_dir),
+            loader=ChoiceLoader([fs_loader, plugin_loader]),
             autoescape=select_autoescape(enabled_extensions=(), default_for_string=False),
         )
 

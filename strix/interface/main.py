@@ -40,6 +40,7 @@ from strix.scope import (
     validate_scope,
 )
 from strix.telemetry.tracer import get_global_tracer
+from strix.core.plugin import get_plugin_manager
 
 
 logging.getLogger().setLevel(logging.ERROR)
@@ -768,6 +769,19 @@ def main() -> None:
 
     validate_environment()
     asyncio.run(warm_up_llm())
+
+    # Initialize Plugin Manager
+    plugin_manager = get_plugin_manager()
+    
+    # Load built-in plugins (if any)
+    built_in_plugins_dir = Path(__file__).parent.parent / "plugins"
+    if built_in_plugins_dir.exists():
+        plugin_manager.load_plugins_from_dir(built_in_plugins_dir)
+        
+    # Load user plugins from ~/.strix/plugins
+    user_plugins_dir = Path.home() / ".strix" / "plugins"
+    if user_plugins_dir.exists():
+        plugin_manager.load_plugins_from_dir(user_plugins_dir)
 
     if not args.run_name:
         if args.scope_config:

@@ -1,7 +1,9 @@
-from typing import Any
+from typing import Any, Optional
 
 from strix.agents.base_agent import BaseAgent
+from strix.agents.planner import ScanPlanner, ScanPlan
 from strix.llm.config import LLMConfig
+from strix.telemetry.tracer import Tracer
 
 
 class StrixAgent(BaseAgent):
@@ -17,6 +19,10 @@ class StrixAgent(BaseAgent):
         self.default_llm_config = LLMConfig(prompt_modules=default_modules)
 
         super().__init__(config)
+        
+        self.planner = ScanPlanner()
+        self.current_plan: ScanPlan | None = None
+        self._processed_findings: set[str] = set()
 
     async def execute_scan(self, scan_config: dict[str, Any]) -> dict[str, Any]:  # noqa: PLR0912
         user_instructions = scan_config.get("user_instructions", "")
@@ -87,3 +93,46 @@ class StrixAgent(BaseAgent):
             task_description += f"\n\nSpecial instructions: {user_instructions}"
 
         return await self.agent_loop(task=task_description)
+
+    async def _process_iteration(self, tracer: Optional[Tracer]) -> bool:
+        # Call parent method to execute normal agent logic
+        should_finish = await super()._process_iteration(tracer)
+        
+        if should_finish:
+            return True
+            
+        # Check for new critical findings and trigger re-planning
+        if tracer and tracer.vulnerability_reports:
+            new_findings = []
+            for report in tracer.vulnerability_reports:
+                # Use a unique key for the finding to avoid processing duplicates
+                finding_id = f"{report.get('type')}:{report.get('location')}"
+                if finding_id not in self._processed_findings:
+                    self._processed_findings.add(finding_id)
+                    new_findings.append(report)
+            
+            if new_findings and self.current_plan:
+                # We have a plan and new findings, check if we need to replan
+                updated_plan = self.planner.replan(self.current_plan, new_findings)
+                
+                # If steps were added (simple check by length or content)
+                # Ideally replan returns a new object or modifies in place. 
+                # Our replan modifies in place and returns it.
+                
+                # We can check if the plan has pending steps that are CRITICAL and were just added
+                # But for now, let's just notify the agent if we found critical stuff
+                
+                critical_findings = [
+                    f for f in new_findings 
+                    if f.get("severity", "").lower() in ["critical", "high"]
+                ]
+                
+                if critical_findings:
+                    notification = (
+                        f"SYSTEM ALERT: {len(critical_findings)} new critical/high severity findings detected. "
+                        "The scan plan has been updated to include exploitation steps. "
+                        "Please prioritize these new steps."
+                    )
+                    self.state.add_message("user", notification)
+                    
+        return False
