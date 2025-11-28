@@ -1023,6 +1023,67 @@ class ScanPlanner:
 
         return notes
 
+    def replan(
+        self,
+        current_plan: ScanPlan,
+        new_findings: list[dict[str, Any]],
+    ) -> ScanPlan:
+        """Update scan plan based on new findings.
+
+        Args:
+            current_plan: The current scan plan
+            new_findings: List of new findings (vulnerabilities)
+
+        Returns:
+            Updated ScanPlan
+        """
+        # Identify if we need to add exploitation steps for critical findings
+        new_steps = []
+        
+        for finding in new_findings:
+            severity = finding.get("severity", "low").lower()
+            vuln_type = finding.get("type", "unknown").lower()
+            
+            if severity in ["critical", "high"]:
+                # Check if we already have an exploitation step for this type
+                exploit_module = f"{vuln_type}.exploitation"
+                
+                # Check if this module exists in our definitions
+                if exploit_module in MODULE_DESCRIPTIONS:
+                    has_exploit = any(
+                        s.module == exploit_module 
+                        for s in current_plan.steps
+                    )
+                    
+                    if not has_exploit:
+                        # Create a mock TCI result for step creation
+                        from strix.core.tci import TCIResult, ComplexityLevel, SecurityPosture
+                        
+                        mock_tci = TCIResult(
+                            score=current_plan.tci_score,
+                            complexity_level=ComplexityLevel(current_plan.complexity_level),
+                            security_posture=SecurityPosture.STANDARD,
+                        )
+                        
+                        # Add exploitation step
+                        step = self._create_step(
+                            module=exploit_module,
+                            priority=PlanPriority.CRITICAL,
+                            phase=ScanPhase.EXPLOITATION,
+                            safe_mode=current_plan.safe_mode,
+                            tci_result=mock_tci,
+                            dependencies=[],
+                            description=f"Exploit {vuln_type} vulnerability",
+                        )
+                        new_steps.append(step)
+                        logger.info(f"Added exploitation step for {vuln_type} due to {severity} finding")
+
+        if new_steps:
+            # Add new steps to the plan
+            current_plan.steps.extend(new_steps)
+
+        return current_plan
+
     def update_plan_from_results(
         self,
         plan: ScanPlan,

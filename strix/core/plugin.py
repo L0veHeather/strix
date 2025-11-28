@@ -17,7 +17,6 @@ from typing import Any, Type
 from jinja2 import BaseLoader, TemplateNotFound
 
 from strix.core.tci import TCIResult, TargetFingerprint
-from strix.tools.registry import register_tool, get_tool_by_name
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +82,9 @@ class PluginManager:
     def load_plugin(self, plugin_class: Type[Plugin]) -> None:
         """Load a single plugin class."""
         try:
+            # Import here to avoid circular dependency
+            from strix.tools.registry import register_tool, get_tool_by_name
+            
             plugin = plugin_class()
             plugin.on_load()
             
