@@ -16,7 +16,8 @@ from jinja2 import (
 )
 
 from strix.core.plugin import get_plugin_manager, PluginPromptLoader
-from strix.llm import LLM, LLMConfig, LLMRequestFailedError
+from strix.llm import LLM, LLMRequestFailedError
+from strix.llm.config import LLMConfig, LLMRequestFailedError
 from strix.llm.utils import clean_content
 from strix.tools import process_tool_invocations
 
@@ -375,7 +376,7 @@ class BaseAgent(metaclass=AgentMeta):
             if self.state.parent_id:
                 logger.info(f"Sub-agent {self.state.agent_id} finishing due to timeout")
                 self.state.set_completed({"success": False, "error": error_msg})
-                if tracer:
+                if tracer and hasattr(tracer, 'update_agent_status'):
                     tracer.update_agent_status(self.state.agent_id, "failed", error_msg)
                 return True  # Signal to finish
             

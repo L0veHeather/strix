@@ -293,9 +293,17 @@ def create_agent(
         # Start timeout monitoring thread
         def _monitor_timeout():
             import time
-            time.sleep(timeout_minutes * 60)
+            start_time = time.time()
+            check_interval = 10  # Check every 10 seconds
             
-            # Check if agent is still running
+            while time.time() - start_time < timeout_minutes * 60:
+                # Check if agent has completed
+                if state.agent_id not in _running_agents:
+                    logger.debug(f"Agent {state.agent_id} completed before timeout")
+                    return  # Exit early
+                time.sleep(check_interval)
+            
+            # Timeout reached, force termination
             if state.agent_id in _running_agents:
                 logger.warning(
                     f"Agent {state.agent_id} ({name}) timed out after {timeout_minutes} minutes. "

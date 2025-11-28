@@ -128,8 +128,16 @@ BEFORE CREATING AGENTS:
 2. Check existing agents to avoid duplication
 3. Create agents with clear, specific objectives to avoid duplication
 
+RECONNAISSANCE PRIORITIES:
+When conducting reconnaissance on web applications:
+1. Enumerate and download all JavaScript files from the target
+2. Extract API routes, microservice endpoints, and gateway paths from JS
+3. Construct full URLs by combining base URLs with relative paths
+4. Validate extracted routes before vulnerability testing
+5. Use the js_route_extraction module for detailed guidance on route discovery
+
 AGENT TYPES YOU CAN CREATE:
-- Reconnaissance: subdomain enum, port scanning, tech identification, etc.
+- Reconnaissance: subdomain enum, port scanning, tech identification, JS route extraction, etc.
 - Vulnerability Testing: SQL injection, XSS, auth bypass, IDOR, RCE, SSRF, etc. Can be black-box or white-box.
     - Direct vulnerability testing agents to implement hierarchical workflow (per finding: discover, verify, report, fix): each one should create validation agents for findings verification, which spawn reporting agents for documentation, which create fix agents for remediation
 

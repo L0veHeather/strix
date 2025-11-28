@@ -30,9 +30,10 @@ if not SANDBOX_MODE:
     from .file_edit import *  # noqa: F403
     from .finish import *  # noqa: F403
     from .notes import *  # noqa: F403
-    from .proxy import *  # noqa: F403
-    from .python import *  # noqa: F403
-    from .reporting import *  # noqa: F403
+    from strix.tools.proxy import proxy_actions  # noqa: F401
+    from strix.tools.python import python_actions  # noqa: F401
+    from strix.tools.reconnaissance import reconnaissance_actions  # noqa: F401
+    from strix.tools.reporting import reporting_actions  # noqa: F401
     from .scripts import *  # noqa: F403
     from .terminal import *  # noqa: F403
     from .thinking import *  # noqa: F403
