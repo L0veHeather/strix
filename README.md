@@ -1,4 +1,4 @@
-## 🦉 Introduction
+# 🦉 Strix: Autonomous AI Security Agent
 
 **Strix** is an advanced, open-source autonomous AI agent designed to perform comprehensive security assessments and penetration testing. Acting like a team of skilled ethical hackers, Strix dynamically analyzes your applications, identifies vulnerabilities, and validates them with real proof-of-concept (PoC) exploits.
 
@@ -6,38 +6,67 @@ Unlike traditional scanners that rely on static rules, Strix uses Large Language
 
 ---
 
-## ✨ Key Features
+## ✨ Key Capabilities
+
+### 🛡️ Advanced Vulnerability Detection
+Strix goes beyond simple signature matching, using AI to understand logic and context:
+- **OWASP API Top 10**: Comprehensive coverage including BOLA, Mass Assignment, and Broken Authentication using **Akto's** proven library.
+- **IDOR & Access Control**: Advanced detection of Insecure Direct Object References with multi-account testing.
+- **Parameter Fuzzing**: Integrated **Arjun** for discovering hidden parameters and legacy endpoints.
+- **Header Manipulation**: Automated **Whitepass-inspired** header bypass techniques (IP spoofing, auth bypass).
+- **Client-Side Attacks**: Detection of XSS (Reflected/Stored), Open Redirects, and CSRF.
+- **Server-Side Flaws**: SSRF, RCE, and SQL Injection testing.
 
 ### 🧠 Agentic Intelligence
-- **Adaptive Planning**: Uses a Target Complexity Index (TCI) to generate tailored scan plans.
-- **Multi-Agent Orchestration**: Specialized agents collaborate on tasks like reconnaissance, planning, and exploitation.
+- **Adaptive Planning**: Calculates a **Target Complexity Index (TCI)** to tailor the scan strategy (e.g., "Quick Scan" vs. "Deep Dive").
+- **Multi-Agent Orchestration**: Specialized agents collaborate:
+    - **Orchestrator**: Manages the overall mission.
+    - **JSRouteAnalyzer**: Deep analysis of JavaScript files using **urlfinder** and AI.
+    - **Validation Agent**: Verifies findings with reproducible PoCs to ensure **Zero False Positives**.
 - **Deep Thinking**: Leverages "thinking" models to analyze complex logic flaws and edge cases.
 
-### 🛠️ Comprehensive Toolkit
-- **Full HTTP Proxy**: Intercepts and manipulates traffic.
-- **Browser Automation**: Tests client-side vulnerabilities (XSS, CSRF) and authentication flows.
-- **Terminal Access**: Executes commands and scripts for infrastructure testing.
-- **Code Analysis**: Performs static and dynamic analysis of source code.
+### � Powerful Interface
+- **Real-time TUI**: Interactive terminal UI with a **Live Stats Panel** showing agent status, token usage, costs, and vulnerability severity breakdown.
+- **Full HTTP Proxy**: Intercepts and manipulates traffic for deep inspection.
+- **Browser Automation**: Headless browser for testing modern SPAs and authentication flows.
 
-### 🔌 MCP Integration (New!)
-- **Model Context Protocol**: Integrates with `zen-mcp-server` for enhanced capabilities.
-- **Multi-Model Consensus**: Validates findings by cross-referencing multiple AI models.
-- **External Tools**: Connects with external CLIs and data sources.
+---
 
-### 🎯 Broad Vulnerability Coverage
-- **OWASP Top 10**: Covers critical web risks like Injection, Broken Access Control, and SSRF.
-- **API Security**: Tests for broken object level authorization (BOLA), mass assignment, etc.
-- **Business Logic**: Identifies flaws in application workflows.
-- **Infrastructure**: Scans for misconfigurations and exposed services.
+## 🔄 How Strix Works (The Workflow)
+
+Strix follows a structured, hacker-like methodology:
+
+1.  **👀 Reconnaissance & Scope**
+    *   Strix starts by mapping the attack surface.
+    *   It uses **urlfinder** to extract URLs from JS files and **Arjun** to find hidden parameters.
+    *   The **Target Complexity Index (TCI)** is calculated to determine the scan depth.
+
+2.  **� Strategic Planning**
+    *   Based on recon data, the AI generates a dynamic **Scan Plan**.
+    *   It prioritizes high-risk areas (e.g., "Test Admin API for BOLA", "Fuzz Upload Endpoint").
+
+3.  **⚡ Execution & Analysis**
+    *   **Agents** execute the plan steps using a suite of tools (Browser, Proxy, Terminal).
+    *   **Akto Integration**: Uses thousands of proven test patterns for API security.
+    *   **Whitepass Logic**: Automatically attempts to bypass 403/401 errors using header manipulation.
+
+4.  **✅ Validation (The "Zero False Positive" Promise)**
+    *   Every potential finding is sent to the **Validation Agent**.
+    *   The agent attempts to reproduce the vulnerability using a generated Python PoC.
+    *   Only successful exploits are reported.
+
+5.  **📊 Reporting**
+    *   Findings are displayed in real-time in the TUI.
+    *   A comprehensive report is generated in `strix_runs/` with reproduction steps.
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
-1.  **Docker**: Strix runs its sandbox environment in Docker. Ensure Docker is installed and running.
+1.  **Docker**: Strix runs its sandbox environment in Docker.
 2.  **Python 3.12+**: Required for the CLI.
-3.  **LLM API Key**: Access to a powerful LLM (e.g., OpenAI GPT-4o/5, Anthropic Claude 3.5 Sonnet).
+3.  **LLM API Key**: Access to a powerful LLM (e.g., OpenAI GPT-4o, Claude 3.5 Sonnet).
 
 ### Install via pipx (Recommended)
 ```bash
@@ -53,28 +82,16 @@ pip install .
 
 ## ⚙️ Configuration
 
-Strix is configured via environment variables. You can set these in your shell or a `.env` file.
+Set your environment variables:
 
-### Required
 ```bash
-# The model to use (supported by LiteLLM)
+# Required: LLM Provider
 export STRIX_LLM="openai/gpt-4o"
-
-# Your API key for the provider
 export LLM_API_KEY="sk-..."
-```
 
-### Optional
-```bash
-# For local models (e.g., Ollama, LMStudio)
-export LLM_API_BASE="http://localhost:11434"
-
-# For real-time web research and reconnaissance
-export PERPLEXITY_API_KEY="pplx-..."
-
-# MCP Configuration (Advanced)
-export ZEN_MCP_ENABLED="true"
-export ZEN_MCP_TRANSPORT="stdio"
+# Optional: Telemetry & Research
+export PERPLEXITY_API_KEY="pplx-..."  # For web research
+export LANGFUSE_PUBLIC_KEY="..."      # For tracing
 ```
 
 ---
@@ -82,87 +99,40 @@ export ZEN_MCP_TRANSPORT="stdio"
 ## 💻 Usage
 
 ### Basic Scanning
-Run a scan against a target URL, domain, or local path.
-
 ```bash
-# Scan a web application
 strix --target https://example.com
-
-# Scan a local directory
-strix --target ./my-app
-
-# Scan a GitHub repository
-strix --target https://github.com/username/repo
 ```
 
-### Advanced Options
+### Scope-Based Scanning (Enterprise)
+For complex engagements, use a scope file to define targets, credentials, and exclusions.
 
-#### Custom Instructions
-Guide the agent to focus on specific areas or use specific credentials.
-
-```bash
-strix --target https://app.com --instruction "Focus on the login flow and check for IDOR in the user profile."
-```
-
-#### Multi-Target Scanning
-Scan multiple assets in a single run.
-
-```bash
-strix -t https://api.app.com -t https://frontend.app.com
-```
-
-#### Headless Mode (CI/CD)
-Run without the interactive TUI, suitable for automated pipelines.
-
-```bash
-strix -n --target https://app.com
-```
-
-### Scope-Based Scanning (New!)
-For complex engagements, define a scope file (YAML) to control targets, exclusions, and credentials.
-
-**scope.yaml example:**
+**scope.yaml:**
 ```yaml
-metadata:
-  engagement_name: "Q4 Security Audit"
-  engagement_type: "web_application"
-
 targets:
   - name: "Main App"
     url: "https://app.example.com"
-    critical: true
-    technologies: ["react", "django"]
     credentials:
       - username: "admin"
-        password_env: "ADMIN_PASSWORD"
-
-exclusions:
-  paths: ["/logout", "/admin/dangerous"]
-
-settings:
-  operational_mode: "poc-only"
+        password_env: "ADMIN_PASS"
 ```
 
-**Run with scope:**
+**Run:**
 ```bash
 strix --scope ./scope.yaml
 ```
 
----
-
-## 🔄 Workflow
-
-Here is how Strix works under the hood:
-
-1.  **Initialization**: Strix loads the configuration, validates the environment, and pulls the sandbox Docker image.
-2.  **Reconnaissance**: The agent gathers information about the target (tech stack, endpoints, attack surface).
-3.  **Planning**:
-    *   Calculates **Target Complexity Index (TCI)** based on recon data.
-    *   Generates a **Scan Plan** with prioritized steps (e.g., "Test Auth", "Fuzz API").
-4.  **Execution**:
-    *   **Agents** execute the plan steps using tools (Browser, Proxy, Terminal).
-    *   **MCP Gateway** (if enabled) provides deep thinking and consensus validation.
-5.  **Validation**: Findings are verified with proof-of-concept exploits to ensure zero false positives.
-6.  **Reporting**: Real-time results are displayed in the TUI, and a final report is generated in `strix_runs/<run-name>`.
+### Custom Instructions
+Guide the agent to focus on specific threats:
+```bash
+strix --target https://api.app.com --instruction "Focus on BOLA vulnerabilities in the /users endpoint using Arjun for parameter discovery."
+```
 
 ---
+
+## 🏗️ Architecture
+
+Strix is built on a modern, modular stack:
+- **Core**: Python 3.12+ with Pydantic for robust data validation.
+- **Sandboxing**: Docker containers for safe tool execution.
+- **Observability**: OpenTelemetry and Langfuse for deep tracing of agent thoughts.
+- **UI**: Textual-based TUI for a rich terminal experience.
