@@ -678,3 +678,16 @@ HelpScreen {
     background: transparent;
     text-style: none;
 }
+
+#stats_panel {
+    width: 35;
+    height: 100%;
+    border: solid cyan;
+    margin-left: 1;
+}
+
+#stats_display {
+    width: 100%;
+    height: 100%;
+    padding: 1 2;
+}

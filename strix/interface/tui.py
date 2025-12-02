@@ -395,6 +395,11 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
             content_container.mount(chat_area_container)
             content_container.mount(agents_tree)
+            
+            # Create stats panel
+            stats_display = Static("", id="stats_display")
+            stats_panel = Vertical(stats_display, id="stats_panel")
+            content_container.mount(stats_panel)
 
             chat_area_container.mount(chat_history)
             chat_area_container.mount(agent_status_display)
@@ -480,6 +485,7 @@ class StrixTUIApp(App):  # type: ignore[misc]
         self._update_chat_view()
 
         self._update_agent_status_display()
+        self._update_stats_display()
 
     def _update_agent_node(self, agent_id: str, agent_data: dict[str, Any]) -> bool:
         if agent_id not in self.agent_nodes:
@@ -589,6 +595,157 @@ class StrixTUIApp(App):  # type: ignore[misc]
                     content_lines.append(tool_content)
 
         return "\n\n".join(content_lines)
+
+
+
+    def _update_stats_display(self) -> None:
+        """Update the real-time stats panel."""
+        try:
+            stats_display = self.query_one("#stats_display", Static)
+        except (ValueError, Exception):
+            return
+        
+        if not self._is_widget_safe(stats_display):
+            return
+        
+        # Build stats content
+        stats_text = Text()
+        
+        # Header
+        stats_text.append("📊 LIVE STATS\n", style="bold cyan")
+        stats_text.append("─" * 30 + "\n", style="dim white")
+        
+        # Agent stats
+        agent_count = len(self.tracer.agents)
+        running_agents = sum(
+            1 for agent in self.tracer.agents.values()
+            if agent.get("status") == "running"
+        )
+        
+        stats_text.append("\n🤖 Agents: ", style="bold white")
+        stats_text.append(str(agent_count), style="dim white")
+        stats_text.append(" • ", style="dim white")
+        stats_text.append("Running: ", style="bold green")
+        stats_text.append(str(running_agents), style="bold white")
+        
+        # Tool stats
+        tool_count = self.tracer.get_real_tool_count()
+        stats_text.append(" • ", style="dim white")
+        stats_text.append("🛠️ Tools: ", style="bold white")
+        stats_text.append(str(tool_count), style="dim white")
+        
+        # LLM stats
+        llm_stats = self.tracer.get_total_llm_stats()
+        total_stats = llm_stats.get("total", {})
+        
+        if total_stats.get("requests", 0) > 0:
+            stats_text.append("\n\n")
+            stats_text.append("📥 Input Tokens: ", style="bold cyan")
+            stats_text.append(
+                self._format_token_count(total_stats["input_tokens"]),
+                style="bold white"
+            )
+            
+            if total_stats.get("cached_tokens", 0) > 0:
+                stats_text.append(" • ", style="dim white")
+                stats_text.append("⚡ Cached: ", style="bold green")
+                stats_text.append(
+                    self._format_token_count(total_stats["cached_tokens"]),
+                    style="bold white"
+                )
+            
+            stats_text.append("\n")
+            stats_text.append("📤 Output Tokens: ", style="bold cyan")
+            stats_text.append(
+                self._format_token_count(total_stats["output_tokens"]),
+                style="bold white"
+            )
+            
+            if total_stats.get("cost", 0) > 0:
+                stats_text.append("\n")
+                stats_text.append("💰 Total Cost: ", style="bold cyan")
+                stats_text.append(
+                    f"${total_stats['cost']:.4f}",
+                    style="bold yellow"
+                )
+        else:
+            stats_text.append("\n\n")
+            stats_text.append("💰 Cost: ", style="bold cyan")
+            stats_text.append("$0.0000", style="bold yellow")
+            stats_text.append(" • ", style="dim white")
+            stats_text.append("📊 Tokens: ", style="bold cyan")
+            stats_text.append("0", style="bold white")
+        
+        # Vulnerability stats
+        vuln_count = len(self.tracer.vulnerability_reports)
+        stats_text.append("\n\n")
+        stats_text.append("🔍 Vulnerabilities: ", style="bold white")
+        stats_text.append(f"{vuln_count}", style="dim white")
+        
+        if vuln_count > 0:
+            stats_text.append("\n")
+            severity_counts = {
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "info": 0
+            }
+            
+            for report in self.tracer.vulnerability_reports:
+                severity = report.get("severity", "").lower()
+                if severity in severity_counts:
+                    severity_counts[severity] += 1
+            
+            severity_parts = []
+            for severity in ["critical", "high", "medium", "low", "info"]:
+                count = severity_counts[severity]
+                if count > 0:
+                    severity_color = self._get_severity_color(severity)
+                    severity_line = Text()
+                    severity_line.append(
+                        f"  {severity.upper()}: ",
+                        style=severity_color
+                    )
+                    severity_line.append(
+                        str(count),
+                        style=f"bold {severity_color}"
+                    )
+                    severity_parts.append(severity_line)
+            
+            for part in severity_parts:
+                stats_text.append("\n")
+                stats_text.append(part)
+        
+        # Update display
+        panel = Panel(
+            stats_text,
+            title="[bold cyan]Statistics[/bold cyan]",
+            border_style="cyan",
+            padding=(1, 2)
+        )
+        
+        self._safe_widget_operation(stats_display.update, panel)
+
+    def _format_token_count(self, count: int) -> str:
+        """Format token count with K/M suffixes."""
+        if count >= 1_000_000:
+            return f"{count / 1_000_000:.1f}M"
+        elif count >= 1_000:
+            return f"{count / 1_000:.1f}K"
+        else:
+            return str(count)
+
+    def _get_severity_color(self, severity: str) -> str:
+        """Get color for vulnerability severity."""
+        colors = {
+            "critical": "bright_red",
+            "high": "red",
+            "medium": "yellow",
+            "low": "blue",
+            "info": "cyan"
+        }
+        return colors.get(severity.lower(), "white")
 
     def _update_agent_status_display(self) -> None:
         try:
