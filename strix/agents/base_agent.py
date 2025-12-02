@@ -17,7 +17,7 @@ from jinja2 import (
 
 from strix.core.plugin import get_plugin_manager, PluginPromptLoader
 from strix.llm import LLM, LLMRequestFailedError
-from strix.llm.config import LLMConfig, LLMRequestFailedError
+from strix.llm.config import LLMConfig
 from strix.llm.utils import clean_content
 from strix.tools import process_tool_invocations
 
