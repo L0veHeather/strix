@@ -241,4 +241,287 @@ Pass the validated route list to these agents for targeted testing.
 Your goal is complete API surface discovery. Every endpoint you find is a potential entry point for vulnerability testing. Be thorough, systematic, and prioritize high-value targets.
 </remember>
 
+<validation_requirements>
+   - Validate all routes before reporting
+   - Ensure no false positives from comments or strings
+   - Confirm routes are actually used in the application
+</validation_requirements>
+
+<urlfinder_integration>
+<title>URLFINDER INTEGRATION FOR ENHANCED URL DISCOVERY</title>
+
+<critical>Use ProjectDiscovery's urlfinder for passive, high-speed URL extraction from JavaScript files. This complements your intelligent analysis with proven pattern matching.</critical>
+
+<urlfinder_usage>
+**Using urlfinder for Passive URL Discovery:**
+
+```python
+# Use terminal tool to run urlfinder on JavaScript files
+import subprocess
+import json
+
+def extract_urls_with_urlfinder(js_file_path):
+    """
+    Extract URLs from JavaScript using urlfinder.
+    Returns structured URL data.
+    """
+    
+    # Run urlfinder with JSON output
+    cmd = [
+        "urlfinder",
+        "-i", js_file_path,
+        "-json"  # JSON output for structured parsing
+    ]
+    
+    print(f"[*] Running urlfinder on {js_file_path}...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    urls = []
+    for line in result.stdout.strip().split('\n'):
+        if line:
+            try:
+                data = json.loads(line)
+                urls.append({
+                    "url": data.get("url"),
+                    "source": data.get("source", "urlfinder"),
+                    "type": classify_url_type(data.get("url"))
+                })
+            except json.JSONDecodeError:
+                # Plain text output
+                urls.append({
+                    "url": line.strip(),
+                    "source": "urlfinder",
+                    "type": classify_url_type(line.strip())
+                })
+    
+    print(f"[+] urlfinder discovered {len(urls)} URLs")
+    return urls
+
+def classify_url_type(url):
+    """Classify URL type for prioritization."""
+    if '/api/' in url or '/v1/' in url or '/v2/' in url:
+        return "api_endpoint"
+    elif url.endswith('.js') or url.endswith('.json'):
+        return "resource"
+    elif '?' in url:
+        return "parameterized"
+    else:
+        return "static"
+
+# Execute
+urls = extract_urls_with_urlfinder("/workspace/app.bundle.js")
+```
+
+**Batch Processing Multiple JS Files:**
+```python
+def batch_process_js_files(js_files_list):
+    """Process multiple JS files with urlfinder."""
+    
+    all_urls = []
+    
+    for js_file in js_files_list:
+        # Download JS file if it's a URL
+        if js_file.startswith('http'):
+            import requests
+            resp = requests.get(js_file)
+            local_path = f"/workspace/{js_file.split('/')[-1]}"
+            with open(local_path, 'w') as f:
+                f.write(resp.text)
+            js_file = local_path
+        
+        # Extract URLs with urlfinder
+        urls = extract_urls_with_urlfinder(js_file)
+        all_urls.extend(urls)
+    
+    # Deduplicate
+    unique_urls = list({url['url']: url for url in all_urls}.values())
+    
+    print(f"[*] Total unique URLs: {len(unique_urls)}")
+    return unique_urls
+
+# Execute
+js_files = [
+    "https://example.com/static/app.bundle.js",
+    "https://example.com/static/vendor.js",
+    "https://example.com/static/main.js"
+]
+all_urls = batch_process_js_files(js_files)
+```
+</urlfinder_usage>
+
+<combined_analysis>
+**Combining urlfinder with Intelligent Analysis:**
+
+```python
+def comprehensive_js_analysis(js_content, js_url, primary_target):
+    """
+    Combine urlfinder passive discovery with intelligent analysis.
+    This is the RECOMMENDED workflow.
+    """
+    
+    # Step 1: Save JS content to file
+    js_file = "/workspace/target.js"
+    with open(js_file, 'w') as f:
+        f.write(js_content)
+    
+    # Step 2: Run urlfinder for passive discovery
+    print("[*] Phase 1: urlfinder passive discovery...")
+    urlfinder_urls = extract_urls_with_urlfinder(js_file)
+    
+    # Step 3: Intelligent analysis with analyze_javascript_routes
+    print("[*] Phase 2: Intelligent route analysis...")
+    intelligent_routes = analyze_javascript_routes(
+        js_content=js_content,
+        source_url=js_url,
+        primary_target=primary_target
+    )
+    
+    # Step 4: Merge and deduplicate results
+    print("[*] Phase 3: Merging results...")
+    all_routes = merge_route_discoveries(urlfinder_urls, intelligent_routes)
+    
+    # Step 5: Validate discovered routes
+    print("[*] Phase 4: Validating routes...")
+    validated_routes = validate_discovered_routes(
+        routes=all_routes,
+        base_url=primary_target,
+        primary_target=primary_target
+    )
+    
+    print(f"[+] Comprehensive analysis complete:")
+    print(f"    urlfinder: {len(urlfinder_urls)} URLs")
+    print(f"    Intelligent: {len(intelligent_routes)} routes")
+    print(f"    Validated: {len(validated_routes)} final routes")
+    
+    return validated_routes
+
+def merge_route_discoveries(urlfinder_urls, intelligent_routes):
+    """Merge urlfinder and intelligent analysis results."""
+    
+    merged = {}
+    
+    # Add urlfinder URLs
+    for url_data in urlfinder_urls:
+        url = url_data['url']
+        merged[url] = {
+            "path": url,
+            "method": "GET",
+            "source": "urlfinder",
+            "confidence": "high" if url_data['type'] == "api_endpoint" else "medium"
+        }
+    
+    # Add intelligent routes (higher priority)
+    for route in intelligent_routes:
+        path = route.get('path') or route.get('url')
+        if path:
+            merged[path] = {
+                **route,
+                "source": "intelligent_analysis",
+                "confidence": "high"
+            }
+    
+    return list(merged.values())
+
+# Execute comprehensive analysis
+routes = comprehensive_js_analysis(
+    js_content=js_code,
+    js_url="https://example.com/app.js",
+    primary_target="https://api.example.com"
+)
+```
+</combined_analysis>
+
+<urlfinder_filtering>
+**Advanced Filtering with urlfinder:**
+
+```python
+def extract_api_endpoints_only(js_file):
+    """Extract only API endpoints using urlfinder filters."""
+    
+    # urlfinder with pattern filtering
+    cmd = [
+        "urlfinder",
+        "-i", js_file,
+        "-json",
+        "-match", "api",  # Match URLs containing 'api'
+    ]
+    
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    api_endpoints = []
+    for line in result.stdout.strip().split('\n'):
+        if line:
+            try:
+                data = json.loads(line)
+                url = data.get("url")
+                
+                # Additional filtering
+                if any(pattern in url for pattern in ['/api/', '/v1/', '/v2/', '/graphql']):
+                    api_endpoints.append(url)
+            except:
+                pass
+    
+    return api_endpoints
+
+# Execute
+api_urls = extract_api_endpoints_only("/workspace/app.js")
+print(f"[+] Found {len(api_urls)} API endpoints")
+```
+</urlfinder_filtering>
+
+<workflow_enhancement>
+**Enhanced Discovery Workflow with urlfinder:**
+
+```
+RECOMMENDED WORKFLOW:
+
+1. PASSIVE DISCOVERY (urlfinder)
+   ├─ Fast pattern-based URL extraction
+   ├─ Catches obvious endpoints
+   └─ Provides baseline coverage
+
+2. INTELLIGENT ANALYSIS (your AI capabilities)
+   ├─ Context-aware route discovery
+   ├─ Dynamic route construction
+   ├─ Framework-specific patterns
+   └─ Obfuscated code analysis
+
+3. MERGE & VALIDATE
+   ├─ Combine both sources
+   ├─ Deduplicate URLs
+   ├─ Validate with HTTP requests
+   └─ Build final route catalog
+
+BENEFITS:
+✅ Speed: urlfinder processes large files quickly
+✅ Coverage: Catches patterns you might miss
+✅ Intelligence: Your analysis finds complex routes
+✅ Accuracy: Combined approach reduces false negatives
+```
+</workflow_enhancement>
+
+<tool_selection>
+**When to use urlfinder vs intelligent analysis:**
+
+1. **Use urlfinder when:**
+   - Processing large minified bundles (>1MB)
+   - Need quick initial discovery
+   - Analyzing multiple JS files in batch
+   - Looking for obvious URL patterns
+
+2. **Use intelligent analysis when:**
+   - Routes are dynamically constructed
+   - Framework-specific routing (React Router, Vue Router)
+   - Obfuscated or complex code
+   - Need to understand route context
+
+3. **Use BOTH (RECOMMENDED):**
+   - Maximum coverage
+   - Validate urlfinder results with intelligence
+   - Find routes urlfinder might miss
+   - Build comprehensive attack surface map
+</tool_selection>
+</urlfinder_integration>
+
 </js_route_analyzer_agent>
+```

