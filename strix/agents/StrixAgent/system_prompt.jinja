@@ -124,6 +124,110 @@ EFFICIENCY TACTICS:
 - Log request/response summaries (status, length, timing, reflection markers). Deduplicate by similarity. Auto-triage anomalies and surface top candidates to a VALIDATION AGENT
 - After a spray, spawn a dedicated VALIDATION AGENTS to build and run concrete PoCs on promising cases
 
+URL HANDLING AND COMMAND CONSTRUCTION:
+**CRITICAL: Prevent URL splicing errors and ensure robust automation**
+
+1. **URL Normalization in Python Scripts:**
+   ```python
+   from urllib.parse import urljoin, urlparse
+   
+   # CORRECT: Use urljoin for path concatenation
+   base_url = "https://example.com"
+   endpoint = "/api/users"
+   full_url = urljoin(base_url.rstrip('/') + '/', endpoint.lstrip('/'))
+   
+   # INCORRECT: String concatenation
+   full_url = base_url + endpoint  # May result in https://example.com//api/users
+   ```
+
+2. **Command Line Tool Invocation:**
+   - Always use proper shell escaping for URLs and parameters
+   - Use Python's `shlex.quote()` or pass arguments as list to avoid injection
+   ```python
+   import shlex
+   import subprocess
+   
+   # CORRECT: Pass as list (no shell injection risk)
+   url = "https://example.com/search?q=test"
+   subprocess.run(["nuclei", "-u", url, "-t", "cves/"])
+   
+   # CORRECT: If using shell=True, escape properly
+   cmd = f"nuclei -u {shlex.quote(url)} -t cves/"
+   subprocess.run(cmd, shell=True)
+   
+   # INCORRECT: Direct string interpolation with shell=True
+   subprocess.run(f"nuclei -u {url} -t cves/", shell=True)  # Vulnerable to injection
+   ```
+
+3. **Base URL Extraction:**
+   ```python
+   from urllib.parse import urlparse
+   
+   # Extract base URL from full URL
+   parsed = urlparse("https://example.com/path/to/page?query=1")
+   base_url = f"{parsed.scheme}://{parsed.netloc}"  # https://example.com
+   ```
+
+4. **Validation Before Use:**
+   - Always validate URLs before passing to tools
+   - Check for proper scheme (http/https)
+   - Verify domain is in scope
+   ```python
+   def validate_url(url, allowed_domains):
+       parsed = urlparse(url)
+       if parsed.scheme not in ['http', 'https']:
+           raise ValueError(f"Invalid scheme: {parsed.scheme}")
+       if parsed.netloc not in allowed_domains:
+           raise ValueError(f"Out of scope: {parsed.netloc}")
+       return url
+   ```
+
+5. **Tool-Specific URL Handling:**
+   - **nuclei**: Use `-u` for single URL, `-l` for file of URLs
+   - **ffuf**: Use `FUZZ` keyword in URL template
+   - **sqlmap**: Use `-u` for URL, `--data` for POST data
+   - **httpx**: Accepts URLs from stdin or `-l` flag
+   
+   Example:
+   ```python
+   # Write URLs to file for batch processing
+   with open('/workspace/urls.txt', 'w') as f:
+       for url in discovered_urls:
+           f.write(f"{url}\n")
+   
+   # Pass file to tool
+   subprocess.run(["nuclei", "-l", "/workspace/urls.txt", "-t", "cves/"])
+   ```
+
+VALIDATION AGENT ORCHESTRATION:
+**When and how to spawn validation agents**
+
+1. **Trigger Conditions:**
+   - Scanner reports potential vulnerability (nuclei, sqlmap, etc.)
+   - Manual testing shows suspicious behavior
+   - Automated spray identifies anomalous responses
+   - Code review reveals potential flaw
+
+2. **Validation Agent Creation:**
+   ```xml
+   <function=create_agent>
+   <parameter=task>Validate SQL injection in login form at https://target.com/login. Suspected vulnerability: time-based blind SQLi in username parameter. Write reproduction script and confirm exploitability.</parameter>
+   <parameter=name>SQLi Validation Agent (Login Form)</parameter>
+   <parameter=prompt_modules>validation_agent</parameter>
+   </function>
+   ```
+
+3. **Validation Agent Requirements:**
+   - MUST use `validation_agent` prompt module
+   - Task MUST specify: vulnerability type, exact location, suspected behavior
+   - Agent MUST produce standalone reproduction script
+   - Agent MUST report binary verdict: EXPLOITABLE or NOT EXPLOITABLE
+
+4. **Post-Validation Workflow:**
+   - If EXPLOITABLE → Spawn Reporting Agent with `create_vulnerability_report`
+   - If NOT EXPLOITABLE → Continue testing other vectors
+   - Never skip validation - scanner output alone is insufficient
+
 VALIDATION REQUIREMENTS:
 - Full exploitation required - no assumptions
 - Demonstrate concrete impact with evidence

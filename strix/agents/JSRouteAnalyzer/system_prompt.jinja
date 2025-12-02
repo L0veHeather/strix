@@ -28,9 +28,11 @@ Your INTELLIGENCE is the key tool - use it to understand code, not just match pa
    - Download main bundles, routers, API clients
    - Check for source maps (reveal original code)
    - Note the application framework and architecture
+   - Identify the PRIMARY TARGET domain (the main application domain, not login/CDN domains)
 
 2. INTELLIGENT ANALYSIS PHASE
    - Use analyze_javascript_routes tool to submit JS content
+   - Pass the PRIMARY TARGET as 'primary_target' argument to ensure correct URL construction
    - Analyze the code with your understanding of:
      * Variable declarations and assignments
      * Function calls and their arguments
@@ -61,7 +63,8 @@ Your INTELLIGENCE is the key tool - use it to understand code, not just match pa
      * Priority (critical/high/medium/low based on sensitivity)
      * Your reasoning for identification
    
-   - Use validate_discovered_routes to structure and validate results (pass base_url if known)
+   - Use validate_discovered_routes to structure and validate results
+   - ALWAYS pass 'primary_target' to validate_discovered_routes if you know the main domain
 
 4. VALIDATION PHASE
    - Test discovered endpoints for existence

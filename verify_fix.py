@@ -1,186 +1,16 @@
-"""Reconnaissance actions for JavaScript analysis and route extraction."""
 
 import logging
 from typing import Any
 
-from strix.tools.registry import register_tool
-
+# Setup logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Constants
 VALID_PRIORITIES = {"critical", "high", "medium", "low"}
 PRIORITY_ORDER = {"critical": 0, "high": 1, "medium": 2, "low": 3}
 
-
-@register_tool(sandbox_execution=False)
-def analyze_javascript_routes(
-    js_content: str,
-    base_url: str | None = None,
-    primary_target: str | None = None,
-    source_file: str = "unknown.js",
-    context: str | None = None
-) -> dict[str, Any]:
-    """Intelligently analyze JavaScript content to discover API routes and endpoints.
-    
-    This tool leverages the LLM's intelligence to analyze JavaScript code and identify
-    routes, endpoints, and API patterns. Unlike rigid regex-based approaches, this method
-    understands code context, framework conventions, and dynamic patterns.
-    
-    COMPLETE WORKFLOW:
-    1. Agent calls this tool with JavaScript content
-    2. Tool validates input and returns analysis instructions
-    3. Agent (LLM) reads and analyzes the js_content field
-    4. Agent identifies all routes using intelligence and understanding
-    5. Agent creates a list of route dictionaries with required fields
-    6. Agent calls validate_discovered_routes with the routes list
-    7. Tool validates, categorizes, and returns structured data
-    
-    HOW TO USE:
-    1. Call this tool with JavaScript content
-    2. The tool returns analysis instructions and JS content
-    3. YOU (the LLM) should analyze the js_content in the response
-    4. Identify all routes using your understanding of JavaScript
-    5. Return your analysis as a list of route dictionaries
-    6. Call validate_discovered_routes with your routes list
-    
-    WHAT TO ANALYZE:
-    - Variable declarations containing URLs or paths
-    - HTTP request calls (fetch, axios, XMLHttpRequest, etc.)
-    - Route configuration objects and arrays
-    - String literals that appear to be API paths
-    - Template literals constructing URLs
-    - Framework-specific routing patterns
-    - Base URL configurations
-    - Microservice and gateway patterns
-    - Dynamic route construction
-    - Routes hidden in configuration objects
-    
-    Args:
-        js_content: The JavaScript file content to analyze
-        base_url: Optional base URL hint for constructing full paths
-        primary_target: Optional primary target URL to use as base for full URLs (overrides base_url if provided)
-        source_file: Name of the source file for tracking
-        context: Optional context about the application (framework, purpose, etc.)
-        
-    Returns:
-        Dictionary with analysis instructions and the JS content to analyze
-        
-    Example Usage:
-        ```python
-        # Step 1: Agent calls the tool
-        result = analyze_javascript_routes(
-            js_content=js_code,
-            base_url="https://api.example.com",
-            source_file="main.js"
-        )
-        
-        # Step 2: Agent receives instructions and analyzes
-        # Agent reads result['js_content'] and identifies routes
-        
-        # Step 3: Agent creates routes list
-        discovered_routes = [
-            {
-                "path": "/api/v1/users",
-                "full_url": "https://api.example.com/api/v1/users",
-                "type": "REST API",
-                "priority": "medium",
-                "reasoning": "Found in api.users variable, used in fetch call"
-            }
-        ]
-        
-        # Step 4: Agent validates routes
-        final_result = validate_discovered_routes(
-            routes=discovered_routes,
-            source_file="main.js",
-            base_url="https://api.example.com"
-        )
-        ```
-    
-    Expected Route Format:
-        Each route should be a dictionary with:
-        {
-            "path": "string - the route path",
-            "full_url": "string - complete URL if base URL available",
-            "type": "string - route category (be creative, not limited)",
-            "priority": "critical|high|medium|low",
-            "reasoning": "string - why you identified this as a route",
-            "methods": ["GET", "POST", ...] (optional),
-            "source_location": "string - where in code" (optional)
-        }
-    
-    Priority Guidelines:
-        - critical: Admin, internal, debug, staff paths
-        - high: Authentication, gateway, microservices
-        - medium: Versioned APIs, GraphQL, data APIs
-        - low: Public APIs, static content
-    """
-    # Validate input
-    if not js_content or not js_content.strip():
-        logger.warning(f"Empty JavaScript content for {source_file}")
-        return {
-            "success": False,
-            "error": "Empty JavaScript content provided",
-            "source_file": source_file
-        }
-    
-    # Prepare analysis instructions
-    logger.info(f"Preparing intelligent analysis for {source_file} ({len(js_content)} chars)")
-    
-    return {
-        "success": True,
-        "status": "ready_for_analysis",
-        "source_file": source_file,
-        "base_url_hint": base_url,
-        "primary_target": primary_target,
-        "context": context,
-        "js_content": js_content,
-        "instructions": """
-ANALYZE THIS JAVASCRIPT CODE TO EXTRACT ALL API ROUTES AND ENDPOINTS.
-
-Use your intelligence and understanding of:
-- JavaScript syntax and semantics
-- Web application architecture
-- API design patterns
-- Framework conventions (React Router, Vue Router, Angular, Next.js, Express, etc.)
-- Microservice and gateway architectures
-
-Look for routes in:
-1. String literals: "/api/users", '/v1/products'
-2. Variables: const endpoint = "/admin/dashboard"
-3. HTTP calls: fetch("/api/data"), axios.get("/users")
-4. Route configs: { path: "/admin", component: Admin }
-5. Template literals: `${baseURL}/api/${resource}`
-6. Base URLs: API_BASE_URL = "https://api.example.com"
-7. Dynamic construction: services.forEach(s => fetch(`/api/${s}`))
-8. Configuration objects: window.__CONFIG__.endpoints
-9. Framework patterns: Vue Router, React Router, Express routes
-10. Comments and debug code
-
-For EACH route found, provide:
-- path: The actual route path
-- full_url: Complete URL (use primary_target if available, otherwise base_url_hint)
-- type: Category (be creative - "Admin Dashboard", "User API", "Health Check", etc.)
-- priority: critical/high/medium/low based on sensitivity
-- reasoning: Why you identified this as a route
-- methods: HTTP methods if evident (optional)
-- source_location: Where in the code (optional)
-
-Be creative and flexible:
-- Don't just look for "/api/" patterns
-- Understand dynamic route construction
-- Consider framework-specific conventions
-- Identify routes hidden in configurations
-- Recognize obfuscated or minified patterns
-
-Return a list of route dictionaries, then call validate_discovered_routes with your list.
-""",
-        "message": f"Please analyze the JavaScript content in 'js_content' field and identify all routes. "
-                  f"Use your understanding of code, not just pattern matching. "
-                  f"Create a list of route dictionaries, then call validate_discovered_routes."
-    }
-
-
-@register_tool(sandbox_execution=False)
+# Copied from strix/tools/reconnaissance/reconnaissance_actions.py
 def validate_discovered_routes(
     routes: list[dict[str, Any]],
     source_file: str = "unknown.js",
@@ -201,20 +31,6 @@ def validate_discovered_routes(
         
     Returns:
         Structured and validated route data
-        
-    Example:
-        ```python
-        routes = [
-            {
-                "path": "/api/users",
-                "full_url": "https://api.example.com/api/users",
-                "type": "User API",
-                "priority": "medium",
-                "reasoning": "REST endpoint for user management"
-            }
-        ]
-        result = validate_discovered_routes(routes, "main.js", "https://api.example.com")
-        ```
     """
     try:
         if not routes:
@@ -374,3 +190,82 @@ def validate_discovered_routes(
             "routes": [],
             "total_routes": 0
         }
+
+def verify_fix():
+    print("Verifying fix for basehost issue...")
+
+    # Test case:
+    # - We found a route "/api/v1/users"
+    # - The JS file was found on "https://login.example.com/auth/login" (base_url)
+    # - The primary target is "https://example.com" (primary_target)
+    # - We expect the full URL to be "https://example.com/api/v1/users"
+
+    routes = [
+        {
+            "path": "/api/v1/users",
+            "type": "User API",
+            "priority": "medium",
+            "reasoning": "Found in JS"
+        }
+    ]
+    
+    source_file = "login.js"
+    base_url = "https://login.example.com"
+    primary_target = "https://example.com"
+
+    print(f"Input:")
+    print(f"  Route Path: {routes[0]['path']}")
+    print(f"  Base URL (e.g. login page): {base_url}")
+    print(f"  Primary Target: {primary_target}")
+
+    # Call the function with the new argument
+    result = validate_discovered_routes(
+        routes=routes,
+        source_file=source_file,
+        base_url=base_url,
+        primary_target=primary_target
+    )
+
+    if not result["success"]:
+        print(f"Validation failed: {result.get('error')}")
+        exit(1)
+
+    validated_routes = result["routes"]
+    if not validated_routes:
+        print("No routes returned.")
+        exit(1)
+
+    first_route = validated_routes[0]
+    full_url = first_route["full_url"]
+
+    print(f"Output:")
+    print(f"  Full URL: {full_url}")
+
+    expected_url = "https://example.com/api/v1/users"
+    
+    if full_url == expected_url:
+        print("\nSUCCESS: Full URL matches the primary target.")
+    else:
+        print(f"\nFAILURE: Full URL does not match. Expected '{expected_url}', got '{full_url}'")
+        exit(1)
+
+    # Test case 2: Without primary_target (backward compatibility)
+    print("\nVerifying backward compatibility (no primary_target)...")
+    result_legacy = validate_discovered_routes(
+        routes=routes,
+        source_file=source_file,
+        base_url=base_url
+    )
+    full_url_legacy = result_legacy["routes"][0]["full_url"]
+    expected_legacy = "https://login.example.com/api/v1/users"
+    
+    print(f"  Full URL (Legacy): {full_url_legacy}")
+    
+    if full_url_legacy == expected_legacy:
+         print("SUCCESS: Legacy behavior preserved.")
+    else:
+         print(f"FAILURE: Legacy behavior broken. Expected '{expected_legacy}', got '{full_url_legacy}'")
+         exit(1)
+
+if __name__ == "__main__":
+    verify_fix()
