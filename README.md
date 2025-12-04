@@ -166,3 +166,50 @@ Strix is built on a modern, modular stack:
 - **Sandboxing**: Docker containers for safe tool execution.
 - **Observability**: OpenTelemetry and Langfuse for deep tracing of agent thoughts.
 - **UI**: Textual-based TUI for a rich terminal experience.
+
+---
+
+## 🚀 Enhanced Features (vs. Original Strix)
+
+This fork extends the [original Strix](https://github.com/usestrix/strix) with significant new capabilities:
+
+### 🔮 Omniscient Testing (Crystal-Box Mode)
+| Feature | Description |
+|---------|-------------|
+| **Infrastructure Analysis** | Phase 0 analysis of `Dockerfile`, `docker-compose.yml`, and `.env` files |
+| **Gray-Box Workflow** | Correlates static code analysis with dynamic testing results |
+| **Full-Chain Exploitation** | Chains vulnerabilities across infrastructure, code, and runtime layers |
+
+### 🔄 Combined DAST + SAST + IAST
+| Mode | New CLI Flag | Capability |
+|------|--------------|------------|
+| SAST | `--source ./path` | Static analysis of local source code |
+| DAST | `--target URL` | Dynamic testing against running targets |
+| IAST | `--docker ./docker-compose.yml --deploy` | Auto-deploy target containers and monitor logs |
+
+### 🛠️ New CLI Arguments
+```
+-S, --source PATH    Path to local source code directory
+-D, --docker PATH    Path to docker-compose.yml or Dockerfile
+    --deploy         Auto-deploy target containers before testing
+```
+
+### 📦 New Components
+| File | Purpose |
+|------|---------|
+| `strix/runtime/deployment_manager.py` | Docker-compose orchestration |
+| `strix/tools/container_tools.py` | Agent tools for container log analysis |
+
+### 🧠 Agent Enhancements
+- **Infrastructure Agent**: New agent type for Phase 0 infrastructure mapping
+- **IAST Tools**: `read_container_logs`, `list_deployed_services` for runtime analysis
+- **Omniscient Workflow**: Infrastructure → Code → Validation → Reporting → Fixing
+
+### Example: Full Omniscient Scan
+```bash
+strix --target http://localhost:8080 \
+      --source ./src \
+      --docker ./docker-compose.yml \
+      --deploy \
+      --instruction "Focus on SSRF that can reach internal services"
+```
