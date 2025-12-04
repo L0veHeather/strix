@@ -18,15 +18,15 @@ Usage:
 
     # Register a custom script
     registry.register_script(
-        name="nmap_full_scan",
-        content="#!/bin/bash\\nnmap -sV -sC -p- $1",
-        description="Full nmap scan with version detection",
-        category="reconnaissance",
-        parameters=["target"]
+        name="my_custom_script",
+        content="#!/bin/bash\\necho 'Hello $1'",
+        description="Custom script",
+        category="utility",
+        parameters=["name"]
     )
 
     # Execute it
-    result = await registry.execute("nmap_full_scan", target="192.168.1.1")
+    result = await registry.execute("my_custom_script", name="World")
 """
 
 from __future__ import annotations
@@ -524,50 +524,6 @@ class ScriptsRegistry:
 
 # Predefined script templates for common operations
 SCRIPT_TEMPLATES: dict[str, dict[str, Any]] = {
-    "nmap_quick_scan": {
-        "content": """#!/bin/bash
-# Quick nmap scan with service detection
-TARGET="$1"
-nmap -sV -T4 --top-ports 1000 -oN /tmp/nmap_quick_$$.txt "$TARGET"
-cat /tmp/nmap_quick_$$.txt
-""",
-        "description": "Quick nmap scan of top 1000 ports with version detection",
-        "category": ScriptCategory.RECONNAISSANCE,
-        "language": ScriptLanguage.BASH,
-        "parameters": ["target"],
-        "parameter_descriptions": {"target": "Target IP or hostname"},
-        "tags": ["nmap", "ports", "scan"],
-    },
-    "nmap_full_scan": {
-        "content": """#!/bin/bash
-# Full nmap scan with scripts
-TARGET="$1"
-nmap -sV -sC -p- -T4 -oN /tmp/nmap_full_$$.txt "$TARGET"
-cat /tmp/nmap_full_$$.txt
-""",
-        "description": "Full nmap scan of all ports with version detection and scripts",
-        "category": ScriptCategory.RECONNAISSANCE,
-        "language": ScriptLanguage.BASH,
-        "parameters": ["target"],
-        "parameter_descriptions": {"target": "Target IP or hostname"},
-        "tags": ["nmap", "ports", "scan", "full"],
-        "timeout": 1800,  # 30 minutes for full scan
-    },
-    "nmap_vuln_scan": {
-        "content": """#!/bin/bash
-# Nmap vulnerability scan
-TARGET="$1"
-nmap -sV --script=vuln -oN /tmp/nmap_vuln_$$.txt "$TARGET"
-cat /tmp/nmap_vuln_$$.txt
-""",
-        "description": "Nmap vulnerability scanning using NSE scripts",
-        "category": ScriptCategory.SCANNING,
-        "language": ScriptLanguage.BASH,
-        "parameters": ["target"],
-        "parameter_descriptions": {"target": "Target IP or hostname"},
-        "tags": ["nmap", "vulnerability", "scan"],
-        "timeout": 900,
-    },
     "nikto_scan": {
         "content": """#!/bin/bash
 # Nikto web vulnerability scan

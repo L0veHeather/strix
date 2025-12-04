@@ -33,8 +33,8 @@ def create_script(
 ) -> dict[str, Any]:
     """Create or update a custom script for deterministic execution.
 
-    Use this to create reusable scripts for common operations like nmap scans,
-    directory enumeration, or custom exploitation scripts. These scripts run
+    Use this to create reusable scripts for common operations like directory
+    enumeration, or custom exploitation scripts. These scripts run
     faster and more reliably than generative approaches.
 
     Args:
@@ -47,7 +47,7 @@ def create_script(
         parameters: JSON list of parameter names, e.g., '["target", "port"]'
         parameter_descriptions: JSON object of param descriptions,
                                e.g., '{"target": "IP or hostname"}'
-        tags: JSON list of tags for searching, e.g., '["nmap", "ports"]'
+        tags: JSON list of tags for searching, e.g., '["custom", "utility"]'
         timeout: Execution timeout in seconds (default: 300)
 
     Returns:
@@ -55,11 +55,11 @@ def create_script(
 
     Example:
         create_script(
-            name="my_nmap_scan",
-            content="#!/bin/bash\\nnmap -sV $1",
-            description="Custom nmap scan",
-            category="reconnaissance",
-            parameters='["target"]'
+            name="my_custom_script",
+            content="#!/bin/bash\\necho 'Hello $1'",
+            description="Custom script",
+            category="utility",
+            parameters='["name"]'
         )
     """
     try:
@@ -116,8 +116,8 @@ def execute_script(
 
     Example:
         execute_script(
-            name="nmap_quick_scan",
-            parameters='{"target": "192.168.1.1"}'
+            name="my_custom_script",
+            parameters='{"name": "World"}'
         )
     """
     # Parse parameters first (separate error handling)
@@ -154,14 +154,14 @@ def list_scripts(
         category: Filter by category (reconnaissance, scanning, exploitation,
                  post_exploitation, reporting, utility, validation)
         tags: JSON list of tags to filter by (any match),
-             e.g., '["nmap", "ports"]'
+             e.g., '["custom", "utility"]'
 
     Returns:
         Dictionary with list of script metadata
 
     Example:
         list_scripts(category="reconnaissance")
-        list_scripts(tags='["nmap"]')
+        list_scripts(tags='["custom"]')
     """
     try:
         registry = get_scripts_registry()
