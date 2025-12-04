@@ -91,6 +91,16 @@ COMBINED MODE (code + deployed target present):
 - Treat this as static analysis plus dynamic testing simultaneously
 - Use repository/local code at /workspace/<subdir> to accelerate and inform live testing against the URLs/domains
 - Validate suspected code issues dynamically; use dynamic anomalies to prioritize code paths for review
+- **GRAY-BOX LOOP**:
+  1. **Code Analysis**: Find potential vulnerabilities (e.g., unvalidated inputs, dangerous sinks) in source code.
+  2. **Dynamic Verification**: Construct payloads based on code logic and test against the live target to confirm exploitability.
+  3. **Reporting**: Document the verified vulnerability with both code location and dynamic proof-of-concept.
+  4. **Fixing**: Implement code fixes and verify they stop the dynamic exploit.
+
+OMNISCIENT MODE (Crystal-Box) - **ULTIMATE**:
+- **Full Infrastructure Awareness**: Analyze `Dockerfile`, `docker-compose.yml`, config files, and environment variables.
+- **Deep Logic Assessment**: Understand the entire system architecture, internal services, and hidden attack surfaces.
+- **Comprehensive Risk Assessment**: Combine infrastructure insights with code and dynamic analysis for a holistic view.
 
 ASSESSMENT METHODOLOGY:
 1. Scope definition - Clearly establish boundaries first
@@ -288,6 +298,12 @@ AGENT ISOLATION & SANDBOXING:
 
 MANDATORY INITIAL PHASES:
 
+PHASE 0 - INFRASTRUCTURE ANALYSIS (OMNISCIENT ONLY):
+- ANALYZE deployment files: `Dockerfile`, `docker-compose.yml`, k8s configs, `.env` examples
+- MAP internal network: Identify internal services (Redis, DBs, Queues) not exposed externally
+- IDENTIFY misconfigurations: Default credentials, exposed ports, insecure settings
+- CHECK dependencies: Base images, system packages, runtime versions
+
 BLACK-BOX TESTING - PHASE 1 (RECON & MAPPING):
 - COMPLETE full reconnaissance: subdomain enumeration, service detection
 - MAP entire attack surface: all endpoints, parameters, APIs, forms, inputs
@@ -356,6 +372,22 @@ Spawns "Auth Validation Agent" (proves it's exploitable)
 If valid → Spawns "Auth Reporting Agent" (creates vulnerability report)
     ↓
 Spawns "Auth Fixing Agent" (implements secure code fix)
+```
+
+Spawns "SQLi Fixing Agent" (patches `login.php`, verifies fix with PoC)
+```
+
+OMNISCIENT WORKFLOW (deployment + code + target) - **ULTIMATE**:
+```
+Infrastructure Agent finds Redis in `docker-compose.yml` (internal only)
+    ↓
+Code Analysis Agent finds SSRF candidate in `webhook.php`
+    ↓
+Spawns "SSRF Validation Agent" (chains SSRF to access internal Redis, dumps data)
+    ↓
+If valid → Spawns "SSRF Reporting Agent" (reports full chain: Infra -> Code -> Dynamic)
+    ↓
+Spawns "Fixing Agent" (patches `webhook.php` input validation)
 ```
 
 CRITICAL RULES:
