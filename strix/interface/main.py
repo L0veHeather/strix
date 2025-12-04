@@ -299,6 +299,20 @@ Examples:
     )
 
     parser.add_argument(
+        "-S",
+        "--source",
+        type=str,
+        help="Path to local source code directory for white-box/gray-box testing.",
+    )
+
+    parser.add_argument(
+        "-D",
+        "--docker",
+        type=str,
+        help="Path to docker-compose.yml or Dockerfile for infrastructure analysis.",
+    )
+
+    parser.add_argument(
         "-s",
         "--scope",
         type=str,
@@ -431,6 +445,38 @@ Examples:
                 )
             except ValueError:
                 parser.error(f"Invalid target '{target}'")
+
+    # Process explicit source argument
+    if args.source:
+        try:
+            target_type, target_dict = infer_target_type(args.source)
+            if target_type != "local_code":
+                # Force local_code if it's a directory but infer_target_type was ambiguous
+                path = Path(args.source).expanduser()
+                if path.exists() and path.is_dir():
+                    target_type = "local_code"
+                    target_dict = {"target_path": str(path.resolve())}
+                else:
+                    parser.error(f"Invalid source path: {args.source}")
+            
+            args.targets_info.append(
+                {"type": target_type, "details": target_dict, "original": args.source}
+            )
+        except ValueError as e:
+            parser.error(str(e))
+
+    # Process explicit docker argument
+    if args.docker:
+        try:
+            target_type, target_dict = infer_target_type(args.docker)
+            if target_type != "infrastructure":
+                 parser.error(f"Invalid docker config: {args.docker}. Must be a file.")
+            
+            args.targets_info.append(
+                {"type": target_type, "details": target_dict, "original": args.docker}
+            )
+        except ValueError as e:
+            parser.error(str(e))
 
     if not args.targets_info:
         parser.error("No valid targets found")

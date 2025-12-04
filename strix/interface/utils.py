@@ -225,6 +225,12 @@ def infer_target_type(target: str) -> tuple[str, dict[str, str]]:  # noqa: PLR09
     except (OSError, RuntimeError) as e:
         raise ValueError(f"Invalid path: {target} - {e!s}") from e
 
+    # Check for infrastructure files
+    if target.endswith(("docker-compose.yml", "docker-compose.yaml", "Dockerfile", ".env")):
+        path = Path(target).expanduser()
+        if path.exists() and path.is_file():
+             return "infrastructure", {"target_path": str(path.resolve())}
+
     if target.startswith("git@") or target.endswith(".git"):
         return "repository", {"target_repo": target}
 
@@ -240,7 +246,8 @@ def infer_target_type(target: str) -> tuple[str, dict[str, str]]:  # noqa: PLR09
         "- A Git repository URL (https://github.com/... or git@github.com:...)\n"
         "- A local directory path\n"
         "- A domain name (e.g., example.com)\n"
-        "- An IP address (e.g., 192.168.1.10)"
+        "- An IP address (e.g., 192.168.1.10)\n"
+        "- An infrastructure file (docker-compose.yml, Dockerfile, .env)"
     )
 
 
