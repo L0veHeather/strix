@@ -125,6 +125,16 @@ class DockerRuntime(AbstractRuntime):
                     tty=True,
                 )
 
+                # Connect to shared network for target access
+                try:
+                    network = self.client.networks.get("strix-network")
+                    network.connect(container)
+                except NotFound:
+                    # Network might not exist if no deployment happened, which is fine
+                    pass
+                except Exception as e:
+                    logger.warning(f"Failed to connect sandbox to strix-network: {e}")
+
                 self._scan_container = container
                 logger.info("Created container %s for scan %s", container.id, scan_id)
 

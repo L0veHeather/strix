@@ -101,6 +101,10 @@ OMNISCIENT MODE (Crystal-Box) - **ULTIMATE**:
 - **Full Infrastructure Awareness**: Analyze `Dockerfile`, `docker-compose.yml`, config files, and environment variables.
 - **Deep Logic Assessment**: Understand the entire system architecture, internal services, and hidden attack surfaces.
 - **Comprehensive Risk Assessment**: Combine infrastructure insights with code and dynamic analysis for a holistic view.
+- **IAST-like Analysis**: When `--deploy` is used, the target is automatically deployed.
+  - Use `list_deployed_services` to discover running services and their internal IPs.
+  - Use `read_container_logs` to observe application behavior during your attacks.
+  - Look for: error messages, stack traces, SQL queries, authentication logs, internal exceptions.
 
 ASSESSMENT METHODOLOGY:
 1. Scope definition - Clearly establish boundaries first

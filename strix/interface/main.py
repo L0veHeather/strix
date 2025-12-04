@@ -379,6 +379,16 @@ Examples:
         ),
     )
 
+    parser.add_argument(
+        "--deploy",
+        action="store_true",
+        help=(
+            "Automatically deploy target using docker-compose before testing. "
+            "Use with --docker to specify the compose file. "
+            "Enables IAST-like testing with container log access."
+        ),
+    )
+
     args = parser.parse_args()
 
     # Require either --target or --scope
@@ -844,6 +854,24 @@ def main() -> None:
             target_info["details"]["cloned_repo_path"] = cloned_path
 
     args.local_sources = collect_local_sources(args.targets_info)
+
+    # Handle target deployment if requested
+    deployment_manager = None
+    if args.deploy and args.docker:
+        from strix.runtime.deployment_manager import TargetDeploymentManager
+        from strix.tools.container_tools import set_deployment_manager
+        
+        deployment_manager = TargetDeploymentManager()
+        try:
+            deployment_manager.deploy(args.docker)
+            set_deployment_manager(deployment_manager)
+        except Exception as e:
+            Console().print(f"[bold red]Failed to deploy target: {e}[/bold red]")
+            sys.exit(1)
+    
+    import atexit
+    if deployment_manager:
+        atexit.register(deployment_manager.teardown)
 
     if args.non_interactive:
         asyncio.run(run_cli(args))

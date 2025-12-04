@@ -22,6 +22,7 @@ Strix transcends traditional scanning by leveraging full deployment context:
 - **Infrastructure Awareness**: Analyzes `Dockerfile`, `docker-compose.yml`, and `.env` to map internal networks and services.
 - **Deep Logic Assessment**: Correlates infrastructure findings with code analysis and dynamic testing.
 - **Full-Chain Exploitation**: Chains vulnerabilities across layers (e.g., using an SSRF in code to access an internal Redis service discovered in docker-compose).
+- **IAST-like Container Analysis**: With `--deploy`, Strix auto-starts your target and reads container logs to observe runtime behavior during attacks.
 
 ### 🧠 Agentic Intelligence
 - **Adaptive Planning**: Calculates a **Target Complexity Index (TCI)** to tailor the scan strategy (e.g., "Quick Scan" vs. "Deep Dive").
@@ -117,6 +118,20 @@ strix --target https://app.example.com \
       --docker ./docker-compose.yml
 ```
 This enables the **Omniscient Workflow**, where Strix analyzes infrastructure, code, and the live application in unison.
+
+### 🔄 Combined DAST + SAST + IAST
+For the ultimate security assessment, deploy your target and enable all analysis modes:
+```bash
+strix --target http://localhost:8080 \
+      --source ./src \
+      --docker ./docker-compose.yml \
+      --deploy
+```
+| Mode | Description |
+|------|-------------|
+| DAST | Dynamic testing against running target |
+| SAST | Static code analysis in `./src` |
+| IAST | Container log analysis (SQL, errors, traces) |
 
 ### Scope-Based Scanning (Enterprise)
 For complex engagements, use a scope file to define targets, credentials, and exclusions.
