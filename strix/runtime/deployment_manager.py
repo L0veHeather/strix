@@ -156,11 +156,12 @@ class TargetDeploymentManager:
                             
                             # Container is ready if:
                             # 1. It's running AND
-                            # 2. Either has no healthcheck OR is healthy
+                            # 2. Either has no healthcheck OR is healthy/starting
+                            # Note: "starting" is valid during the healthcheck start_period
                             if status != "running":
                                 all_ready = False
                                 logger.debug(f"Container {container.name} not running yet (status: {status})")
-                            elif health not in ("none", "healthy"):
+                            elif health not in ("none", "healthy", "starting"):
                                 all_ready = False
                                 logger.debug(f"Container {container.name} not healthy yet (health: {health})")
                             else:
