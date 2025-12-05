@@ -110,6 +110,88 @@ class TargetDeploymentManager:
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to list containers for network attachment: {e}")
 
+    def wait_for_ready(self, timeout: int = 120, check_interval: int = 2) -> None:
+        """
+        Wait for all deployed containers to be running and healthy.
+        
+        Args:
+            timeout: Maximum time to wait in seconds (default: 120)
+            check_interval: Time between checks in seconds (default: 2)
+        
+        Raises:
+            RuntimeError: If containers are not ready within the timeout period
+        """
+        if not self._deployed_compose_files:
+            logger.info("No deployed containers to wait for")
+            return
+        
+        logger.info(f"Waiting for containers to be ready (timeout: {timeout}s)...")
+        start_time = time.time()
+        
+        while time.time() - start_time < timeout:
+            all_ready = True
+            container_statuses = []
+            
+            for compose_file in self._deployed_compose_files:
+                try:
+                    cmd = ["docker", "compose", "-f", str(compose_file), "ps", "-q"]
+                    result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                    container_ids = result.stdout.strip().splitlines()
+                    
+                    for cid in container_ids:
+                        if not cid:
+                            continue
+                        try:
+                            container = self.client.containers.get(cid)
+                            container.reload()
+                            
+                            status = container.status
+                            health = container.attrs.get("State", {}).get("Health", {}).get("Status", "none")
+                            
+                            container_statuses.append({
+                                "name": container.name,
+                                "status": status,
+                                "health": health
+                            })
+                            
+                            # Container is ready if:
+                            # 1. It's running AND
+                            # 2. Either has no healthcheck OR is healthy
+                            if status != "running":
+                                all_ready = False
+                                logger.debug(f"Container {container.name} not running yet (status: {status})")
+                            elif health not in ("none", "healthy"):
+                                all_ready = False
+                                logger.debug(f"Container {container.name} not healthy yet (health: {health})")
+                            else:
+                                logger.debug(f"Container {container.name} is ready (status: {status}, health: {health})")
+                                
+                        except Exception as e:
+                            logger.warning(f"Error checking container {cid}: {e}")
+                            all_ready = False
+                            
+                except subprocess.CalledProcessError as e:
+                    logger.warning(f"Failed to list containers: {e}")
+                    all_ready = False
+            
+            if all_ready:
+                logger.info("All containers are ready")
+                # Give containers a bit more time to fully initialize
+                time.sleep(2)
+                return
+            
+            time.sleep(check_interval)
+        
+        # Timeout reached
+        status_msg = "\n".join([
+            f"  - {c['name']}: status={c['status']}, health={c['health']}"
+            for c in container_statuses
+        ])
+        raise RuntimeError(
+            f"Containers not ready within {timeout}s timeout.\n"
+            f"Container statuses:\n{status_msg}"
+        )
+
     def teardown(self) -> None:
         """Stop and remove all deployed services."""
         for compose_file in self._deployed_compose_files:

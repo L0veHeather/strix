@@ -861,12 +861,19 @@ def main() -> None:
         from strix.runtime.deployment_manager import TargetDeploymentManager
         from strix.tools.container_tools import set_deployment_manager
         
+        console = Console()
         deployment_manager = TargetDeploymentManager()
         try:
+            console.print("[bold cyan]📦 Deploying target application...[/bold cyan]")
             deployment_manager.deploy(args.docker)
             set_deployment_manager(deployment_manager)
+            
+            # Wait for containers to be ready
+            console.print("[bold cyan]⏳ Waiting for containers to be ready...[/bold cyan]")
+            deployment_manager.wait_for_ready(timeout=120)
+            console.print("[bold green]✅ Deployment ready, starting scan...[/bold green]\n")
         except Exception as e:
-            Console().print(f"[bold red]Failed to deploy target: {e}[/bold red]")
+            console.print(f"[bold red]❌ Failed to deploy target: {e}[/bold red]")
             sys.exit(1)
     
     import atexit

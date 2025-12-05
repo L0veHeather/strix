@@ -215,6 +215,12 @@ def infer_target_type(target: str) -> tuple[str, dict[str, str]]:  # noqa: PLR09
     else:
         return "ip_address", {"target_ip": str(ip_obj)}
 
+    # Check for infrastructure files before checking for directories
+    if target.endswith(("docker-compose.yml", "docker-compose.yaml", "Dockerfile", ".env")):
+        path = Path(target).expanduser()
+        if path.exists() and path.is_file():
+            return "infrastructure", {"target_path": str(path.resolve())}
+
     path = Path(target).expanduser()
     try:
         if path.exists():
@@ -224,12 +230,6 @@ def infer_target_type(target: str) -> tuple[str, dict[str, str]]:  # noqa: PLR09
             raise ValueError(f"Path exists but is not a directory: {target}")
     except (OSError, RuntimeError) as e:
         raise ValueError(f"Invalid path: {target} - {e!s}") from e
-
-    # Check for infrastructure files
-    if target.endswith(("docker-compose.yml", "docker-compose.yaml", "Dockerfile", ".env")):
-        path = Path(target).expanduser()
-        if path.exists() and path.is_file():
-             return "infrastructure", {"target_path": str(path.resolve())}
 
     if target.startswith("git@") or target.endswith(".git"):
         return "repository", {"target_repo": target}
