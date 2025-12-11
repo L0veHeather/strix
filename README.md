@@ -176,11 +176,11 @@ Strix is built on a modern, modular stack:
 This fork extends the [original Strix](https://github.com/usestrix/strix) with significant new capabilities, focusing on **Inter-Agent Coordination** and **Gray-Box testing**:
 
 ### 🧠 Advanced Agent Coordination
-| Feature | Original Strix | This Version |
-|---------|---------------|--------------|
-| **Agent Roles** | Generic agents | **Specialized Roles**: `BlackboxScanner`, `WhiteboxVerifier`, `GrayboxMonitor` |
-| **Communication** | Basic message passing | **Structured Protocols**: Distinct handoff workflows (e.g., "Delegate to Verify") |
-| **Verification** | Mostly autonomous black-box | **Cross-Mode Verification**: Blackbox findings are verified by Whitebox (code) and Graybox (state) agents |
+|Feature|Original Strix|This Version|
+|---|---|---|
+|**Agent Roles**|Generic agents|**Specialized Roles**: `BlackboxScanner`, `WhiteboxVerifier`, `GrayboxMonitor`|
+|**Communication**|Basic message passing|**Bidirectional Handoff**: <br>1. Blackbox -> Whitebox (Trace Trigger Point) <br>2. Whitebox -> Blackbox (Verify Code Flaw)|
+|**Verification**|Mostly autonomous black-box|**Silent Detection**: Graybox finds vulnerabilities via **internal logs/DB** even if HTTP response is normal (200 OK)| |
 
 ### 🔮 Omniscient Testing (Crystal-Box Mode)
 | Feature | Description |

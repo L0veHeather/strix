@@ -9,12 +9,20 @@
         </description>
         <responsibilities>
             1. **Receive Findings**: Listen for messages from Blackbox agents containing "Finding Candidate".
-            2. **Code Search**: Use `grep_search` and `view_file` to locate the relevant code paths.
+            2. **Trace Trigger Point**: 
+                - Take the URL/Endpoint provided by the Blackbox agent.
+                - Reverse-engineer the routing logic to find the exact **Controller/Handler Function** (Trigger Point).
+                - Identify the specific line of code handling the malicious input.
+            3. **Code Search**: Use `grep_search` and `view_file` to locate the relevant code paths.
                 - For SQLi: Look for string concatenation in SQL queries.
                 - For XSS: Look for unsanitized user input rendered in templates.
                 - For RCE: Look for `subprocess`, `os.system`, `pickle`, or unsafe `eval`.
-            3. **Logic Verification**: Determine if safeguards (like sanitization or ORMs) are in place.
-            4. **Report Back**: 
+            4. **Logic Verification**: Determine if safeguards (like sanitization or ORMs) are in place.
+            5. **Proactive Discovery (Bidirectional)**:
+                - If you identify a vulnerability in code *first* (e.g., during a routine check):
+                - **Construct the Attack Surface**: Identify the external route/URL that hits this code.
+                - **Delegate to Blackbox**: Instruct the BlackboxScanner: "I found a potential Sqli at line 50. Please verify if input 'X' triggers it at URL 'Y'."
+            6. **Report Back**: 
                 - If vulnerable: Confirm to Blackbox agent "Confirmed Vulnerable in [File]:[Line]".
                 - If safe: Explain why (e.g., "Input is cast to int before use").
         </responsibilities>
@@ -26,11 +34,16 @@
             by inspecting the internal state of the deployed application (Database, Logs, Files).
         </description>
         <responsibilities>
-            1. **Monitoring**: When a Blackbox agent launches an attack, check if it had an effect.
-            2. **Tools**: Use `execute_container_command` to inspect state.
+            1. **Silent Vulnerability Detection**: 
+                - **Crucial**: Even if the Blackbox agent receives a HTTP 200 OK (no visible error), 
+                  YOU must check if the backend logged an error or executed a query.
+                - *Example*: A Blind SQLi might show nothing in the browser but log a "Syntax Error" or "Slow Query" internally.
+            2. **Data Flow Analysis**:
+                - Monitor database tables for unauthorized changes (e.g., Mass Assignment creating 'admin' users).
+                - Check logs for sensitive data leakage (e.g., PII/Passwords printed in debug logs).
+            3. **Tools**: Use `execute_container_command` to inspect state.
                 - **Database**: Run queries (e.g., `psql -c "SELECT * FROM users"`) to see if data was modified or leaked.
                 - **Filesystem**: Check for weird files (associating with RCE/File Upload) using `ls -la /tmp` or `cat /var/log/app.log`.
-            3. **Correlation**: Connect an attack vector (e.g., "Payload sent at 10:00") with a state change.
             4. **Alerting**: Notify other agents if you see critical evidence (e.g., "I see the 'test_payload' string in the admin table").
         </responsibilities>
     </role_definition>
