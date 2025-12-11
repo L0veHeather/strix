@@ -135,5 +135,36 @@ CONTAINER_TOOLS = [
             "required": []
         },
         "handler": list_deployed_services
+    },
+    {
+        "name": "execute_container_command",
+        "description": (
+            "Execute a command inside a specific deployed container. "
+            "Use this for Graybox monitoring: checking database tables (e.g., psql/mysql client), "
+            "verifying file creation, or checking internal logs via cat/tail. "
+            "WARNING: Use carefully."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "service_name": {
+                    "type": "string",
+                    "description": "Name of the service or container to execute command in."
+                },
+                "command": {
+                    "type": "string",
+                    "description": "The command line string to execute."
+                },
+                "user": {
+                    "type": "string",
+                    "description": "Optional user to execute as (e.g., 'root', 'postgres')."
+                }
+            },
+            "required": ["service_name", "command"]
+        },
+        "handler": lambda service_name, command, user=None: (
+            _deployment_manager.execute_command(service_name, command, user) 
+            if _deployment_manager else {"error": "No deployment manager available"}
+        )
     }
 ]

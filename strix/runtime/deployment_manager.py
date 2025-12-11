@@ -249,6 +249,71 @@ class TargetDeploymentManager:
                 
         return logs
 
+    def execute_command(self, service_name: str, command: str, user: str | None = None) -> dict[str, Any]:
+        """
+        Execute a command in a deployed container.
+        
+        Args:
+            service_name: Name of the service/container to execute command in.
+            command: Command string to execute.
+            user: Optional user to execute command as.
+            
+        Returns:
+            Dict containing exit_code, stdout, and stderr.
+        """
+        target_cid = None
+        target_container = None
+        
+        # Find the container
+        for compose_file in self._deployed_compose_files:
+            try:
+                cmd = ["docker", "compose", "-f", str(compose_file), "ps", "-q"]
+                result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+                container_ids = result.stdout.strip().splitlines()
+                
+                for cid in container_ids:
+                    if not cid:
+                        continue
+                    try:
+                        container = self.client.containers.get(cid)
+                        # Check name or service label
+                        if (container.name == service_name or 
+                            container.labels.get("com.docker.compose.service") == service_name):
+                            target_cid = cid
+                            target_container = container
+                            break
+                    except Exception:
+                        pass
+                if target_cid:
+                    break
+            except subprocess.CalledProcessError:
+                pass
+                
+        if not target_container:
+            raise ValueError(f"Service or container '{service_name}' not found")
+            
+        logger.info(f"Executing command in {target_container.name}: {command}")
+        
+        try:
+            # simple exec_run
+            exit_code, output = target_container.exec_run(
+                command, 
+                user=user or "",
+                demux=True # Separate stdout/stderr
+            )
+            
+            stdout_bytes, stderr_bytes = output if output else (b"", b"")
+            
+            return {
+                "exit_code": exit_code,
+                "stdout": stdout_bytes.decode("utf-8", errors="replace") if stdout_bytes else "",
+                "stderr": stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to execute command: {e}")
+            raise RuntimeError(f"Command execution failed: {e}") from e
+
     def list_services(self) -> list[dict[str, Any]]:
         """List all deployed services and their network info."""
         services = []

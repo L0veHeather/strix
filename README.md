@@ -171,7 +171,14 @@ Strix is built on a modern, modular stack:
 
 ## 🚀 Enhanced Features (vs. Original Strix)
 
-This fork extends the [original Strix](https://github.com/usestrix/strix) with significant new capabilities:
+This fork extends the [original Strix](https://github.com/usestrix/strix) with significant new capabilities, focusing on **Inter-Agent Coordination** and **Gray-Box testing**:
+
+### 🧠 Advanced Agent Coordination
+| Feature | Original Strix | This Version |
+|---------|---------------|--------------|
+| **Agent Roles** | Generic agents | **Specialized Roles**: `BlackboxScanner`, `WhiteboxVerifier`, `GrayboxMonitor` |
+| **Communication** | Basic message passing | **Structured Protocols**: Distinct handoff workflows (e.g., "Delegate to Verify") |
+| **Verification** | Mostly autonomous black-box | **Cross-Mode Verification**: Blackbox findings are verified by Whitebox (code) and Graybox (state) agents |
 
 ### 🔮 Omniscient Testing (Crystal-Box Mode)
 | Feature | Description |
@@ -179,13 +186,14 @@ This fork extends the [original Strix](https://github.com/usestrix/strix) with s
 | **Infrastructure Analysis** | Phase 0 analysis of `Dockerfile`, `docker-compose.yml`, and `.env` files |
 | **Gray-Box Workflow** | Correlates static code analysis with dynamic testing results |
 | **Full-Chain Exploitation** | Chains vulnerabilities across infrastructure, code, and runtime layers |
+| **State Monitoring** | **NEW**: Agents can now execute commands inside containers (`psql`, `cat logs`) to confirm invisible side-effects (Blind SQLi, RCE) |
 
 ### 🔄 Combined DAST + SAST + IAST
 | Mode | New CLI Flag | Capability |
 |------|--------------|------------|
 | SAST | `--source ./path` | Static analysis of local source code |
 | DAST | `--target URL` | Dynamic testing against running targets |
-| IAST | `--docker ./docker-compose.yml --deploy` | Auto-deploy target containers and monitor logs |
+| IAST | `--docker ./docker-compose.yml --deploy` | Auto-deploy target containers, monitor logs, AND **inspect internal state** |
 
 ### 🛠️ New CLI Arguments
 ```
@@ -197,12 +205,13 @@ This fork extends the [original Strix](https://github.com/usestrix/strix) with s
 ### 📦 New Components
 | File | Purpose |
 |------|---------|
-| `strix/runtime/deployment_manager.py` | Docker-compose orchestration |
-| `strix/tools/container_tools.py` | Agent tools for container log analysis |
+| `strix/runtime/deployment_manager.py` | Docker-compose orchestration & command execution |
+| `strix/tools/container_tools.py` | Tools for log reading and **arbitrary command execution** in containers |
+| `strix/prompts/coordination/agent_roles.jinja` | Role definitions and collaboration protocols |
 
 ### 🧠 Agent Enhancements
 - **Infrastructure Agent**: New agent type for Phase 0 infrastructure mapping
-- **IAST Tools**: `read_container_logs`, `list_deployed_services` for runtime analysis
+- **Graybox Monitor**: New role using `execute_container_command` to inspect DB/filesystem changes
 - **Omniscient Workflow**: Infrastructure → Code → Validation → Reporting → Fixing
 
 ### Example: Full Omniscient Scan
@@ -211,5 +220,5 @@ strix --target http://localhost:8080 \
       --source ./src \
       --docker ./docker-compose.yml \
       --deploy \
-      --instruction "Focus on SSRF that can reach internal services"
+      --instruction "Focus on SSRF. Use the GrayboxMonitor to check if the request hit the internal Redis."
 ```
