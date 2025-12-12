@@ -14,8 +14,37 @@
 1. Identify every user-influenced URL/host/path across web/mobile/API and background jobs. Include headers that trigger server-side fetches (link previews, analytics, crawler hooks).
 2. Establish a quiet oracle first (OAST DNS/HTTP callbacks). Then pivot to internal addressing (loopback, RFC1918, link-local, IPv6, hostnames) and protocol variations.
 3. Enumerate redirect behavior, header propagation, and method control (GET-only vs arbitrary). Test parser differentials across frameworks, CDNs, and language libraries.
-4. Target high-value services (metadata, kubelet, Redis, FastCGI, Docker, Vault, internal admin panels). Chain to write/exec primitives if possible.
+4. Pivot to internal services (metadata/Redis/Databases) and chain to full exploitation (RCE or data theft).
 </methodology>
+
+<dangerous_functions>
+When analyzing source code, look for HTTP clients taking user input:
+
+<python>
+- `requests.get(...)`, `requests.post(...)`
+- `urllib.request.urlopen(...)`
+- `httpx.get(...)`, `aiohttp.ClientSession().get(...)`
+</python>
+
+<java>
+- `new URL(user_input).openStream()`
+- `HttpURLConnection` usage
+- `HttpClient.newBuilder()...`
+- `RestTemplate.getForObject(...)` (Spring)
+</java>
+
+<go>
+- `http.Get(...)`, `http.Post(...)`
+- `http.NewRequest("GET", url, ...)`
+- `valyala/fasthttp` usage
+</go>
+
+<javascript_node>
+- `fetch(...)`, `axios.get(...)`
+- `http.get(...)`, `https.request(...)`
+- `got(...)`, `superagent.get(...)`
+</javascript_node>
+</dangerous_functions>
 
 <injection_surfaces>
 - Direct URL params: url=, link=, fetch=, src=, webhook=, avatar=, image=

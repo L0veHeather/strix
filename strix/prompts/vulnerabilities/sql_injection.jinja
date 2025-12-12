@@ -16,6 +16,34 @@
 4. Pivot to metadata and high-value tables, then target impactful write primitives (auth bypass, role changes, filesystem access) if feasible.
 </methodology>
 
+<dangerous_functions>
+When analyzing source code, look for string concatenation in SQL queries:
+
+<python>
+- `cursor.execute(f"SELECT ... {user_input} ...")`
+- `session.query(...).filter(text(f"..."))` (SQLAlchemy unsafe)
+- `RawSQL(...)`, `extra(where=[...])` (Django unsafe)
+</python>
+
+<java>
+- `Statement.executeQuery("SELECT ... " + userInput)`
+- `jdbcTemplate.query("..." + userInput)`
+- `entityManager.createNativeQuery("..." + userInput)`
+</java>
+
+<go>
+- `db.Query(fmt.Sprintf("SELECT ... %s", userInput))`
+- `gorm.Raw("..." + userInput)`
+- Manual query building strings
+</go>
+
+<javascript_node>
+- `client.query(\`SELECT ... \${userInput}\`)`
+- `knex.raw(\`... \${userInput} ...\`)`
+- `sequelize.query(\`... \${userInput}\`)`
+</javascript_node>
+</dangerous_functions>
+
 <injection_surfaces>
 - Path/query/body/header/cookie; mixed encodings (URL, JSON, XML, multipart)
 - Identifier vs value: table/column names (require quoting/escaping) vs literals (quotes/CAST requirements)

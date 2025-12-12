@@ -19,6 +19,31 @@
 4. Progress to durable control: file write, scheduled execution, service restart hooks; avoid loud reverse shells unless necessary.
 </methodology>
 
+<dangerous_functions>
+When analyzing source code, grep for these high-risk sinks:
+
+<python>
+- `os.system(...)`, `os.popen(...)`, `subprocess.Popen(...)`, `subprocess.run(...)`, `subprocess.call(...)`
+- `eval(...)`, `exec(...)`, `compile(...)`
+- `pickle.loads(...)`, `yaml.load(...)` (PyYAML unsafe)
+- `importlib.import_module(...)` with user input
+</python>
+
+<java>
+- `Runtime.getRuntime().exec(...)`
+- `new ProcessBuilder(...)`
+- `ExpressionParser.parseExpression(...)` (SpEL)
+- `Method.invoke(...)` (Reflection)
+- `ObjectInputStream.readObject(...)` (Deserialization)
+</java>
+
+<go>
+- `exec.Command(...)`, `exec.CommandContext(...)`
+- `syscall.Exec(...)`, `syscall.ForkExec(...)`
+- `os.StartProcess(...)`
+</go>
+</dangerous_functions>
+
 <detection_channels>
 <time_based>
 - Unix: ;sleep 1 | `sleep 1` || sleep 1; gate delays with short subcommands to reduce noise
