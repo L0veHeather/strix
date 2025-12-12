@@ -260,6 +260,51 @@ class QuitScreen(ModalScreen):  # type: ignore[misc]
             self.app.pop_screen()
 
 
+class RestartScreen(ModalScreen):  # type: ignore[misc]
+    def compose(self) -> ComposeResult:
+        yield Grid(
+            Label("⚠️ Restart Scan?", id="restart_title"),
+            Label("This will stop the current scan and start over.", id="restart_subtitle"),
+            Grid(
+                Button("Restart", variant="error", id="restart"),
+                Button("Cancel", variant="default", id="cancel"),
+                id="restart_buttons",
+            ),
+            id="restart_dialog",
+        )
+
+    def on_mount(self) -> None:
+        cancel_button = self.query_one("#cancel", Button)
+        cancel_button.focus()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key in ("left", "right", "up", "down"):
+            focused = self.focused
+
+            if focused and focused.id == "restart":
+                cancel_button = self.query_one("#cancel", Button)
+                cancel_button.focus()
+            else:
+                restart_button = self.query_one("#restart", Button)
+                restart_button.focus()
+
+            event.prevent_default()
+        elif event.key == "enter":
+            focused = self.focused
+            if focused and isinstance(focused, Button):
+                focused.press()
+            event.prevent_default()
+        elif event.key == "escape":
+            self.app.pop_screen()
+            event.prevent_default()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "restart":
+            self.app.action_restart_confirmed()
+        else:
+            self.app.pop_screen()
+
+
 class StrixTUIApp(App):  # type: ignore[misc]
     CSS_PATH = "assets/tui_styles.tcss"
 
@@ -270,6 +315,7 @@ class StrixTUIApp(App):  # type: ignore[misc]
         Binding("f1", "toggle_help", "Help", priority=True),
         Binding("ctrl+q", "request_quit", "Quit", priority=True),
         Binding("ctrl+c", "request_quit", "Quit", priority=True),
+        Binding("ctrl+r", "request_restart", "Restart", priority=True),
         Binding("escape", "stop_selected_agent", "Stop Agent", priority=True),
     ]
 
@@ -292,20 +338,11 @@ class StrixTUIApp(App):  # type: ignore[misc]
         self._scan_stop_event = threading.Event()
         self._scan_completed = threading.Event()
 
-        self._action_verbs = [
-            "Generating",
-            "Scanning",
-            "Analyzing",
-            "Probing",
-            "Hacking",
-            "Testing",
-            "Exploiting",
-            "Investigating",
-        ]
-        self._agent_verbs: dict[str, str] = {}  # agent_id -> current_verb
-        self._agent_verb_timers: dict[str, Any] = {}  # agent_id -> timer
         self._agent_dot_states: dict[str, int] = {}  # agent_id -> dot_count (0-3)
         self._dot_animation_timer: Any | None = None
+
+        self._start_dot_animation()
+
 
         self._setup_cleanup_handlers()
 
@@ -507,14 +544,11 @@ class StrixTUIApp(App):  # type: ignore[misc]
             }
 
             status_icon = status_indicators.get(status, "🔵")
-            agent_name = f"{status_icon} {escape_markup(agent_name_raw)}"
-
             if status == "running":
-                self._start_agent_verb_timer(agent_id)
-            elif status == "waiting":
-                self._stop_agent_verb_timer(agent_id)
+                real_status, _ = self.tracer.get_latest_agent_activity(agent_id)
+                agent_name = f"{status_icon} {escape_markup(agent_name_raw)} [dim]({real_status})[/dim]"
             else:
-                self._stop_agent_verb_timer(agent_id)
+                agent_name = f"{status_icon} {escape_markup(agent_name_raw)}"
 
             if agent_node.label != agent_name:
                 agent_node.set_label(agent_name)
@@ -801,8 +835,8 @@ class StrixTUIApp(App):  # type: ignore[misc]
                 self._safe_widget_operation(status_display.remove_class, "hidden")
                 self._start_dot_animation()
             elif status == "running":
-                current_verb = self._get_agent_verb(self.selected_agent_id)
-                animated_text = self._get_animated_verb_text(self.selected_agent_id, current_verb)
+                real_status, _ = self.tracer.get_latest_agent_activity(self.selected_agent_id)
+                animated_text = self._get_animated_verb_text(self.selected_agent_id, real_status)
                 self._safe_widget_operation(status_text.update, animated_text)
                 self._safe_widget_operation(
                     keymap_indicator.update, "[dim]ESC to stop | CTRL-C to quit and save[/dim]"
@@ -814,34 +848,6 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
         except (KeyError, Exception):
             self._safe_widget_operation(status_display.add_class, "hidden")
-
-    def _get_agent_verb(self, agent_id: str) -> str:
-        if agent_id not in self._agent_verbs:
-            self._agent_verbs[agent_id] = random.choice(self._action_verbs)  # nosec B311 # noqa: S311
-        return self._agent_verbs[agent_id]
-
-    def _start_agent_verb_timer(self, agent_id: str) -> None:
-        if agent_id not in self._agent_verb_timers:
-            self._agent_verb_timers[agent_id] = self.set_interval(
-                30.0, lambda: self._change_agent_action_verb(agent_id)
-            )
-
-    def _stop_agent_verb_timer(self, agent_id: str) -> None:
-        if agent_id in self._agent_verb_timers:
-            self._agent_verb_timers[agent_id].stop()
-            del self._agent_verb_timers[agent_id]
-
-    def _change_agent_action_verb(self, agent_id: str) -> None:
-        if agent_id not in self._agent_verbs:
-            self._agent_verbs[agent_id] = random.choice(self._action_verbs)  # nosec B311 # noqa: S311
-            return
-
-        current_verb = self._agent_verbs[agent_id]
-        available_verbs = [verb for verb in self._action_verbs if verb != current_verb]
-        self._agent_verbs[agent_id] = random.choice(available_verbs)  # nosec B311 # noqa: S311
-
-        if self.selected_agent_id == agent_id:
-            self._update_agent_status_display()
 
     def _get_animated_verb_text(self, agent_id: str, verb: str) -> str:
         if agent_id not in self._agent_dot_states:
@@ -996,8 +1002,7 @@ class StrixTUIApp(App):  # type: ignore[misc]
         status_icon = status_indicators.get(status, "🔵")
         agent_name = f"{status_icon} {escape_markup(agent_name_raw)}"
 
-        if status in ["running", "waiting"]:
-            self._start_agent_verb_timer(agent_id)
+
 
         try:
             if parent_id and parent_id in self.agent_nodes:
@@ -1346,9 +1351,71 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
             logging.exception(f"Failed to stop agent {agent_id}")
 
+    def action_request_restart(self) -> None:
+        if self.show_splash or not self.is_mounted:
+            return
+
+        if len(self.screen_stack) > 1:
+            return
+
+        self.push_screen(RestartScreen())
+
+    def action_restart_confirmed(self) -> None:
+        self.pop_screen()
+        self._restart_scan_process()
+
+    def _restart_scan_process(self) -> None:
+        # 1. Stop current scan thread
+        if self._scan_thread and self._scan_thread.is_alive():
+            self._scan_stop_event.set()
+            # Wait briefly/async to avoid blocking UI too long, but for restart we want to be sure
+            # Ideally we'd do this async, but simple join with timeout is safer for now
+            self._scan_thread.join(timeout=2.0)
+        
+        # 2. Reset global state
+        self._scan_stop_event.clear()
+        self._scan_completed.clear()
+        
+        # Clear internal agent graph state
+        try:
+            from strix.tools.agents_graph.agents_graph_actions import reset_agent_graph
+            reset_agent_graph()
+        except ImportError:
+            pass
+
+        # Clear Tracer
+        self.tracer = Tracer(self.scan_config["run_name"])
+        self.tracer.set_scan_config(self.scan_config)
+        set_global_tracer(self.tracer)
+        
+        # Clear UI Collections
+        self.agent_nodes.clear()
+        self._displayed_agents.clear()
+        self._displayed_events.clear()
+        self.selected_agent_id = None
+        
+        # 3. Clear UI Widgets
+        try:
+            agents_tree = self.query_one("#agents_tree", Tree)
+            agents_tree.clear()
+            agents_tree.root.expand()
+            
+            chat_display = self.query_one("#chat_display", Static)
+            chat_display.update("")
+            
+            stats_display = self.query_one("#stats_display", Static)
+            stats_display.update("Reseting metrics...")
+            
+            status_text = self.query_one("#status_text", Static)
+            status_text.update("")
+        except (ValueError, Exception):
+            pass
+
+        # 4. Start new scan
+        self._start_scan_thread()
+
     def action_custom_quit(self) -> None:
-        for agent_id in list(self._agent_verb_timers.keys()):
-            self._stop_agent_verb_timer(agent_id)
+
 
         if self._scan_thread and self._scan_thread.is_alive():
             self._scan_stop_event.set()

@@ -21,6 +21,25 @@ _agent_instances: dict[str, Any] = {}
 _agent_states: dict[str, Any] = {}
 
 
+def reset_agent_graph() -> None:
+    """Reset the global agent graph state.
+    
+    This is used when restarting the scan to ensure no stale agent state remains.
+    """
+    global _root_agent_id
+    
+    _agent_graph["nodes"].clear()
+    _agent_graph["edges"].clear()
+    _root_agent_id = None
+    _agent_messages.clear()
+    _agent_instances.clear()
+    _agent_states.clear()
+    
+    # We don't clear _running_agents here because they are threads that might
+    # still be shutting down. The TUI/Coordinator handles thread termination.
+
+
+
 def _run_agent_in_thread(
     agent: Any, state: Any, inherited_messages: list[dict[str, Any]]
 ) -> dict[str, Any]:

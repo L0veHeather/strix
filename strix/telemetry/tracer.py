@@ -651,6 +651,39 @@ class Tracer:
             if exec_data.get("agent_id") == agent_id
         ]
 
+    def get_latest_agent_activity(self, agent_id: str) -> tuple[str, bool]:
+        """Get the latest activity description for an agent.
+        
+        Returns:
+            Tuple of (status_text, is_active)
+        """
+        if agent_id not in self.agents:
+            return "Unknown", False
+            
+        agent_data = self.agents[agent_id]
+        status = agent_data.get("status", "unknown")
+        
+        if status != "running":
+            return status.title(), False
+            
+        # Check for running tools
+        running_tools = [
+            t for t in self.tool_executions.values()
+            if t.get("agent_id") == agent_id and t.get("status") == "running"
+        ]
+        
+        if running_tools:
+            # Sort by start time descending (newest first)
+            running_tools.sort(key=lambda x: x.get("started_at", ""), reverse=True)
+            tool = running_tools[0]
+            return f"Executing {tool['tool_name']}", True
+            
+        # Check if waiting for LLM
+        # This is harder to track without direct LLM state, but we can infer roughly
+        # from the absence of running tools while status is running.
+        
+        return "Thinking / Processing...", True
+
     def get_real_tool_count(self) -> int:
         return sum(
             1

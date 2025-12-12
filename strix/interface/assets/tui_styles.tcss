@@ -691,3 +691,62 @@ HelpScreen {
     height: 100%;
     padding: 1 2;
 }
+
+RestartScreen {
+    align: center middle;
+    background: $background 0%;
+}
+
+#restart_dialog {
+    grid-size: 1;
+    grid-gutter: 1;
+    grid-rows: auto auto;
+    padding: 1;
+    width: 30;
+    height: auto;
+    border: round #ef4444;
+    background: #1a1a1a 98%;
+}
+
+#restart_title {
+    color: #ef4444;
+    text-style: bold;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 0;
+}
+
+#restart_subtitle {
+    color: #d4d4d4;
+    text-align: center;
+    width: 100%;
+    margin-bottom: 1;
+}
+
+#restart_buttons {
+    grid-size: 2;
+    grid-gutter: 1;
+    grid-columns: 1fr 1fr;
+    width: 100%;
+    height: 1;
+}
+
+#restart_buttons Button {
+    height: 1;
+    min-height: 1;
+    border: none;
+    text-style: bold;
+    width: 100%;
+}
+
+#restart {
+    background: transparent;
+    color: #ef4444;
+    border: none;
+}
+
+#restart:hover, #restart:focus {
+    background: #ef4444;
+    color: #ffffff;
+    border: none;
+}
