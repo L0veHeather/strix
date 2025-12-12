@@ -68,6 +68,7 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
         "targets": args.targets_info,
         "user_instructions": args.instruction or "",
         "run_name": args.run_name,
+        "external_containers": getattr(args, "container", []) or [],
     }
 
     llm_config = LLMConfig()

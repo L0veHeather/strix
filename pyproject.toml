@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "strix-agent"
+name = "Strix"
 version = "0.3.6"
 description = "Open-source AI Hackers for your apps"
 authors = ["Strix <hi@usestrix.com>"]

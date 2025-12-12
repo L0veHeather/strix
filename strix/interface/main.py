@@ -313,6 +313,15 @@ Examples:
     )
 
     parser.add_argument(
+        "-C",
+        "--container",
+        type=str,
+        action="append",
+        help="Name or ID of an existing Docker container to attach for monitoring/gray-box testing. "
+        "Can be specified multiple times.",
+    )
+
+    parser.add_argument(
         "-s",
         "--scope",
         type=str,
@@ -857,23 +866,36 @@ def main() -> None:
 
     # Handle target deployment if requested
     deployment_manager = None
-    if args.deploy and args.docker:
+    # Handle target deployment if requested
+    deployment_manager = None
+    if (args.deploy and args.docker) or getattr(args, "container", None):
         from strix.runtime.deployment_manager import TargetDeploymentManager
         from strix.tools.container_tools import set_deployment_manager
         
         console = Console()
         deployment_manager = TargetDeploymentManager()
         try:
-            console.print("[bold cyan]📦 Deploying target application...[/bold cyan]")
-            deployment_manager.deploy(args.docker)
+            if args.deploy and args.docker:
+                console.print("[bold cyan]📦 Deploying target application...[/bold cyan]")
+                deployment_manager.deploy(args.docker)
+            
+            if getattr(args, "container", None):
+                console.print("[bold cyan]🔗 Attaching to external containers...[/bold cyan]")
+                for container_id in args.container:
+                    deployment_manager.attach_container(container_id)
+
             set_deployment_manager(deployment_manager)
             
-            # Wait for containers to be ready
-            console.print("[bold cyan]⏳ Waiting for containers to be ready...[/bold cyan]")
-            deployment_manager.wait_for_ready(timeout=120)
-            console.print("[bold green]✅ Deployment ready, starting scan...[/bold green]\n")
+            # Wait for containers to be ready if deployed
+            if args.deploy and args.docker:
+                console.print("[bold cyan]⏳ Waiting for containers to be ready...[/bold cyan]")
+                deployment_manager.wait_for_ready(timeout=120)
+                console.print("[bold green]✅ Deployment ready, starting scan...[/bold green]\n")
+            elif getattr(args, "container", None):
+                console.print("[bold green]✅ Containers attached, starting scan...[/bold green]\n")
+
         except Exception as e:
-            console.print(f"[bold red]❌ Failed to deploy target: {e}[/bold red]")
+            console.print(f"[bold red]❌ Failed to setup deployment: {e}[/bold red]")
             sys.exit(1)
     
     import atexit

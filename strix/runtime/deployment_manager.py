@@ -27,6 +27,7 @@ class TargetDeploymentManager:
             raise RuntimeError("Docker is not available.") from e
         
         self._deployed_compose_files: list[Path] = []
+        self._external_containers: list[Any] = []
         self._network: Network | None = None
 
     def _ensure_network(self) -> Network:
@@ -109,6 +110,30 @@ class TargetDeploymentManager:
                     
         except subprocess.CalledProcessError as e:
             logger.warning(f"Failed to list containers for network attachment: {e}")
+
+    def attach_container(self, container_name_or_id: str) -> None:
+        """
+        Attach an existing external container to the Strix network.
+        """
+        try:
+            container = self.client.containers.get(container_name_or_id)
+            self._ensure_network()
+            
+            # Check if already connected
+            if STRIX_NETWORK_NAME not in container.attrs["NetworkSettings"]["Networks"]:
+                logger.info(f"Connecting external container {container.name} to {STRIX_NETWORK_NAME}")
+                self._network.connect(container)
+                container.reload()
+                
+            self._external_containers.append(container)
+            logger.info(f"Attached external container: {container.name}")
+            
+        except NotFound:
+            # Re-raise so user knows the container ID is wrong
+            raise ValueError(f"Container '{container_name_or_id}' not found") from None
+        except Exception as e:
+            logger.error(f"Failed to attach container {container_name_or_id}: {e}")
+            raise RuntimeError(f"Failed to attach container: {e}") from e
 
     def wait_for_ready(self, timeout: int = 120, check_interval: int = 2) -> None:
         """
@@ -209,6 +234,10 @@ class TargetDeploymentManager:
         # Better to leave it or handle it carefully as other things might use it.
         # For now, we leave the network.
 
+        # For external containers, we just clear the list and maybe disconnect them if we wanted to be clean,
+        # but leaving them connected is usually harmless and potentially useful for user debugging.
+        self._external_containers.clear()
+
     def get_logs(self, service_name: str | None = None, tail: int = 100) -> dict[str, str]:
         """
         Get logs from deployed containers.
@@ -246,7 +275,20 @@ class TargetDeploymentManager:
                         
             except subprocess.CalledProcessError:
                 pass
-                
+        
+        # Add logs from external containers
+        for container in self._external_containers:
+            try:
+                c_name = container.name
+                # External containers don't have a specific service name concept, use name
+                if service_name and service_name != c_name:
+                    continue
+                    
+                log_content = container.logs(tail=tail).decode("utf-8", errors="replace")
+                logs[f"external ({c_name})"] = log_content
+            except Exception as e:
+                logger.warning(f"Failed to get logs for external container {container.name}: {e}")
+
         return logs
 
     def execute_command(self, service_name: str, command: str, user: str | None = None) -> dict[str, Any]:
@@ -288,6 +330,14 @@ class TargetDeploymentManager:
                     break
             except subprocess.CalledProcessError:
                 pass
+        
+        # Check external containers if not found yet
+        if not target_container:
+            for container in self._external_containers:
+                if container.name == service_name or container.short_id == service_name or container.id == service_name:
+                    target_container = container
+                    break
+
                 
         if not target_container:
             raise ValueError(f"Service or container '{service_name}' not found")
@@ -346,4 +396,25 @@ class TargetDeploymentManager:
                         pass
             except subprocess.CalledProcessError:
                 pass
+
+        # Add external containers
+        for container in self._external_containers:
+            try:
+                container.reload()
+                networks = container.attrs["NetworkSettings"]["Networks"]
+                ip_address = ""
+                if STRIX_NETWORK_NAME in networks:
+                    ip_address = networks[STRIX_NETWORK_NAME]["IPAddress"]
+                
+                services.append({
+                    "name": container.name,
+                    "service": "external",
+                    "id": container.short_id,
+                    "status": container.status,
+                    "ip": ip_address,
+                    "ports": container.attrs["NetworkSettings"]["Ports"]
+                })
+            except Exception:
+                pass
+
         return services
