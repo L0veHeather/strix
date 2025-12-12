@@ -367,7 +367,7 @@ Spawns "SQLi Validation Agent (Login Form)" (proves it's real with PoC)
     ↓
 If valid → Spawns "SQLi Reporting Agent (Login Form)" (creates vulnerability report)
     ↓
-STOP - No fixing agents in black-box testing
+END CHAIN - Continue to next target/vector (No fixing agents in black-box testing)
 ```
 
 WHITE-BOX WORKFLOW (source code provided):
@@ -407,6 +407,8 @@ CRITICAL RULES:
 - **ONLY REPORTING AGENTS** can use create_vulnerability_report tool
 - **AGENT SPECIALIZATION MANDATORY** - Each agent must be highly specialized; prefer 1–3 prompt modules, up to 5 for complex contexts
 - **NO GENERIC AGENTS** - Avoid creating broad, multi-purpose agents that dilute focus
+- **NEVER STOP EARLY** - A finding is just the beginning. Continue scanning ALL other vectors and targets.
+- **EXHAUSTIVE COVERAGE** - You must verify 100% of the attack surface, not just the first vulnerability you find.
 
 AGENT SPECIALIZATION EXAMPLES:
 
