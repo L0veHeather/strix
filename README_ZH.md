@@ -161,6 +161,47 @@ strix --target https://api.app.com --instruction "Focus on BOLA vulnerabilities 
 
 ---
 
+## 🛠️ 自定义与开发指南
+
+Strix 的设计初衷就是易于扩展。以下是如何根据您的需求定制 Strix：
+
+### 1. 完善漏洞检测方式
+要修改 Strix 检测漏洞的 *逻辑* 或添加新的攻击向量，请编辑 `strix/prompts/vulnerabilities/` 中的提示词模块。
+*   **位置**: `strix/prompts/vulnerabilities/*.jinja`
+*   **操作**: 编辑 `<methodology>` (方法论) 和 `<automation_patterns>` (自动化模式) 部分。
+*   **示例**: 要添加一种新的 JWT 绕过技术，请编辑 `jwt.jinja` 并在 `<automation_patterns>` 块中添加具体的 Python 代码模式。
+
+### 2. 增加新的检测工具
+Strix 支持代理使用的自定义 Python 工具。
+*   **位置**: `strix/tools/`
+*   **如何添加**:
+    1.  创建一个新文件 (例如 `strix/tools/my_custom_tool.py`)。
+    2.  定义您的函数并使用 `@register_tool` 装饰器。
+    3.  在 `strix/tools/registry.py` 中导入您的工具。
+```python
+from strix.tools.registry import register_tool
+
+@register_tool(sandbox_execution=True) # 如果需要访问本地网络，设为 False
+def my_custom_tool(target_url: str) -> dict:
+    """代理能看到的工具描述，用于理解何时使用此工具。"""
+    # 您的逻辑代码
+    return {"status": "success", "data": ...}
+```
+
+### 3. 修改 Agent 配置 (如过期时间)
+*   **超时时间**: 设置 `AGENT_TIMEOUT_MINUTES` 环境变量以限制子代理的运行时间（默认：30分钟）。
+*   **最大迭代次数**:修改 `strix/interface/tui.py` 或 `strix/agents/StrixAgent/strix_agent.py` 中的 `max_iterations`。
+
+### 4. 限制检测方式
+如果您希望限制代理只进行特定类型的测试（例如，*仅* SQL 注入）：
+*   **CLI 指令**: 使用 `--instruction` 参数。
+    ```bash
+    strix --target ... --instruction "只测试 SQL 注入。不要进行模糊测试或 XSS 测试。"
+    ```
+*   **TCI 覆盖**: 您可以修改 `strix/core/tci.py` 强制过滤特定模块，尽管通常基于指令的引导就足够了。
+
+---
+
 ## 🏗️ 架构
 
 Strix 构建在现代模块化堆栈之上：

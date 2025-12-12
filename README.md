@@ -161,6 +161,47 @@ strix --target https://api.app.com --instruction "Focus on BOLA vulnerabilities 
 
 ---
 
+## 🛠️ Customization & Development Guide
+
+Strix is designed to be easily extensible. Here is how you can customize it to fit your needs:
+
+### 1. Improving Vulnerability Detection
+To modify *how* Strix detects vulnerabilities or to add new attack vectors, edit the prompt modules in `strix/prompts/vulnerabilities/`.
+*   **Location**: `strix/prompts/vulnerabilities/*.jinja`
+*   **Action**: Edit the `<methodology>` and `<automation_patterns>` sections.
+*   **Example**: To add a new JWT bypass technique, edit `jwt.jinja` and add the specific python code pattern to the `<automation_patterns>` block.
+
+### 2. Adding New Tools
+Strix supports custom Python tools that agents can use.
+*   **Location**: `strix/tools/`
+*   **How to Add**:
+    1.  Create a new file (e.g., `strix/tools/my_custom_tool.py`).
+    2.  Define your function and use the `@register_tool` decorator.
+    3.  Import your tool in `strix/tools/registry.py`.
+```python
+from strix.tools.registry import register_tool
+
+@register_tool(sandbox_execution=True) # Set False if it needs local network access
+def my_custom_tool(target_url: str) -> dict:
+    """Description that the Agent sees to understand when to use this tool."""
+    # Your logic here
+    return {"status": "success", "data": ...}
+```
+
+### 3. Configuring Agent Behavior
+*   **Timeouts**: Set `AGENT_TIMEOUT_MINUTES` environment variable to limit how long a sub-agent can run (default: 30 mins).
+*   **Max Iterations**: Modify `max_iterations` in `strix/interface/tui.py` or `strix/agents/StrixAgent/strix_agent.py`.
+
+### 4. Limiting Detection Methods
+If you want to restrict the agent to specific test types (e.g., *only* SQL Injection):
+*   **CLI**: Use the `--instruction` flag.
+    ```bash
+    strix --target ... --instruction "Only test for SQL Injection. Do NOT perform fuzzing or XSS tests."
+    ```
+*   **TCI Override**: You can modify `strix/core/tci.py` to force-filter specific modules, though instruction-based guidance is usually sufficient.
+
+---
+
 ## 🏗️ Architecture
 
 Strix is built on a modern, modular stack:
