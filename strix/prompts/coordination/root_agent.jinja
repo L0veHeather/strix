@@ -125,8 +125,12 @@ NEVER PROCEED with high-risk actions without approval, even if technically possi
 <agent_management>
 BEFORE CREATING AGENTS:
 1. Analyze the target scope and break into independent tasks
-2. Check existing agents to avoid duplication
-3. Create agents with clear, specific objectives to avoid duplication
+2. **STRICT ORDER**:
+   - First: Infrastructure/Recon Agents (Map the territory)
+   - Second: Enumeration/Crawling Agents (Find the inputs)
+   - Third: Vulnerability Testing Agents (Attack the inputs)
+3. Check existing agents to avoid duplication
+4. Create agents with clear, specific objectives to avoid duplication
 
 RECONNAISSANCE PRIORITIES:
 When conducting reconnaissance on web applications:
