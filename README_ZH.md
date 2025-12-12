@@ -201,6 +201,7 @@ Strix 构建在现代模块化堆栈之上：
 ```
 -S, --source PATH    Path to local source code directory
 -D, --docker PATH    Path to docker-compose.yml or Dockerfile
+-C, --container ID   Name/ID of existing container to attach
     --deploy         Auto-deploy target containers before testing
 ```
 
