@@ -1,7 +1,8 @@
 from typing import Any, Optional
 
 from strix.agents.base_agent import BaseAgent
-from strix.agents.planner import ScanPlanner, ScanPlan
+from strix.agents.planner import ScanPlanner, ScanPlan, create_plan_from_fingerprint
+from strix.core.tci import TargetFingerprint
 from strix.llm.config import LLMConfig
 from strix.telemetry.tracer import Tracer
 
@@ -88,6 +89,38 @@ class StrixAgent(BaseAgent):
             task_parts.extend(f"- {ip}" for ip in ip_addresses)
 
         task_description = " ".join(task_parts)
+
+        # Generate Scan Plan
+        fingerprint = TargetFingerprint(
+            target_id="multi-target" if len(targets) > 1 else "primary-target",
+            target_url=urls[0] if urls else None,
+            target_host=ip_addresses[0] if ip_addresses else None,
+            technologies=[],  # Will be populated by recon
+            open_ports=[],    # Will be populated by recon
+            has_user_input=True,
+            has_json_api=True,  # Assume API presence until proven otherwise
+            scan_timestamp=None,
+        )
+        
+        # Populate basic info from targets
+        if urls:
+            fingerprint.api_endpoints = 10  # Baseline assumption
+        
+        self.current_plan = self.planner.generate_plan(
+            target="Multiple Targets" if len(targets) > 1 else (urls[0] if urls else "Local Target"),
+            fingerprint=fingerprint,
+            tci_result=self.planner.config,  # This will be recalculated inside generate_plan wrapper usually, but here we invoke directly. 
+            # Actually generate_plan takes tci_result. Let's use the helper create_plan_from_fingerprint
+        )
+        
+        # Correct usage with helper
+        self.current_plan = create_plan_from_fingerprint(
+            target="Multiple Targets" if len(targets) > 1 else (urls[0] if urls else "Local Target"),
+            fingerprint=fingerprint
+        )
+
+        task_description += f"\n\nINITIAL SCAN PLAN:\n{self.current_plan.to_json()}"
+        task_description += "\n\nFollow this plan. Execute the steps in order. Mark steps as completed or failed as you proceed."
 
         if user_instructions:
             task_description += f"\n\nSpecial instructions: {user_instructions}"

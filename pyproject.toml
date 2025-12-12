@@ -60,6 +60,7 @@ textual = "^4.0.0"
 xmltodict = "^0.13.0"
 pyte = "^0.8.1"
 requests = "^2.32.0"
+httpx = "^0.27.0"
 libtmux = "^0.46.2"
 pyyaml = "^6.0.0"
 

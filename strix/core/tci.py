@@ -891,8 +891,8 @@ class TargetComplexityIndex:
         if not modules:
             modules = {"reconnaissance", "business_logic", "idor"}
 
-        # Limit to 5 modules
-        return sorted(modules)[:5]
+        # Return all recommended modules without artificial limit
+        return sorted(list(modules))
 
     def _generate_priority_vulnerabilities(
         self, fp: TargetFingerprint, score: float
@@ -930,7 +930,7 @@ class TargetComplexityIndex:
         if score >= 60 and (fp.cloud_provider or fp.has_json_api):
             vulns.append("SSRF")
 
-        # Deduplicate and limit
+        # Deduplicate
         seen: set[str] = set()
         unique_vulns = []
         for v in vulns:
@@ -938,7 +938,8 @@ class TargetComplexityIndex:
                 seen.add(v)
                 unique_vulns.append(v)
 
-        return unique_vulns[:8]
+        # Return all found vulnerabilities without limit
+        return unique_vulns
 
     def _calculate_timeout_multiplier(
         self, score: float, fp: TargetFingerprint

@@ -751,8 +751,8 @@ class ScanPlanner:
         if self.config.include_reconnaissance and "reconnaissance" not in modules:
             modules.insert(0, "reconnaissance")
 
-        # Limit to max modules
-        return modules[: self.config.max_modules]
+        # Return all selected modules
+        return modules
 
     def _generate_steps(
         self,
