@@ -19,6 +19,38 @@ def _validate_root_agent(agent_state: Any) -> dict[str, Any] | None:
     return None
 
 
+def _check_scan_controller_active(agent_state: Any = None) -> dict[str, Any] | None:
+    """Check if ScanController is managing the scan.
+    
+    When ScanController is active, finish_scan CANNOT be called.
+    The controller has sole authority to decide when scanning is complete.
+    """
+    try:
+        # Try to access the agent to check for controller
+        from strix.tools.agents_graph.agents_graph_actions import _agent_instances
+        
+        if agent_state and hasattr(agent_state, "agent_id"):
+            agent_id = agent_state.agent_id
+            if agent_id in _agent_instances:
+                agent = _agent_instances[agent_id]
+                if hasattr(agent, "scan_controller") and agent.scan_controller is not None:
+                    return {
+                        "success": False,
+                        "message": (
+                            "CRITICAL: ScanController is managing this scan. "
+                            "You CANNOT call finish_scan. "
+                            "The scan will complete automatically when the controller "
+                            "determines all tasks are complete. "
+                            "Finding vulnerabilities does NOT end the scan."
+                        ),
+                        "controller_active": True
+                    }
+    except (ImportError, AttributeError, KeyError):
+        pass
+    
+    return None
+
+
 def _validate_content(content: str) -> dict[str, Any] | None:
     if not content or not content.strip():
         return {"success": False, "message": "Content cannot be empty"}
@@ -156,6 +188,11 @@ def finish_scan(
     agent_state: Any = None,
 ) -> dict[str, Any]:
     try:
+        # CRITICAL: Check if ScanController is active first
+        controller_check = _check_scan_controller_active(agent_state)
+        if controller_check:
+            return controller_check
+        
         validation_error = _validate_root_agent(agent_state)
         if validation_error:
             return validation_error
