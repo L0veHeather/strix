@@ -146,6 +146,14 @@ module = [
     "yaml.*",
     "langfuse.*",
     "opentelemetry.*",
+    "anthropic.*",
+    "beautifulsoup4.*",
+    "whois.*",
+    "dnspython.*",
+    "arjun.*",
+    "lxml.*",
+    "cssselect.*",
+    "click.*",
 ]
 ignore_missing_imports = true
 
