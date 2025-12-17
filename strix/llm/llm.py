@@ -277,7 +277,13 @@ class LLM:
         conversation_history: list[dict[str, Any]],
         scan_id: str | None = None,
         step_number: int = 1,
+        phase: str | None = None,
     ) -> LLMResponse:
+        """Generate response from LLM."""
+        if phase:
+            logger.info(f"[LLM] waiting for analysis... (phase={phase})")
+        else:
+            logger.info("[LLM] waiting for analysis...")
         messages = [{"role": "system", "content": self.system_prompt}]
 
         identity_message = self._build_identity_message()
@@ -294,6 +300,12 @@ class LLM:
 
         try:
             response = await self._make_request(cached_messages)
+            
+            if phase:
+                logger.info(f"[LLM] analysis received (phase={phase})")
+            else:
+                logger.info("[LLM] analysis received")
+                
             self._update_usage_stats(response)
 
             content = ""

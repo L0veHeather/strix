@@ -59,7 +59,8 @@ class ScanController:
         self.suspected_vulnerabilities: list[dict[str, Any]] = []  # For LLM_VERIFICATION phase
         
         # Statistics
-        self.tasks_executed = 0
+        self.tasks_executed = 0  # Tasks started
+        self.tasks_finished = 0  # Tasks completed
         self.phase_tasks_executed: dict[ScanPhase, int] = {phase: 0 for phase in ScanPhase}
         
         # Initialize with first task
@@ -72,6 +73,23 @@ class ScanController:
         self.add_task(initial_task)
         
         logger.info(f"ScanController initialized for target: {initial_target}")
+    
+    @property
+    def total_tasks(self) -> int:
+        """Total tasks managed so far (completed + pending)."""
+        return self.tasks_executed + len(self.task_queue)
+
+    def get_progress_snapshot(self) -> dict[str, int]:
+        """Get deterministic progress snapshot."""
+        return {
+            "completed": self.tasks_finished,
+            "total": self.total_tasks,
+            "remaining": len(self.task_queue)
+        }
+    
+    def finish_task(self, task: ScanTask) -> None:
+        """Mark a task as finished."""
+        self.tasks_finished += 1
     
     def add_task(self, task: ScanTask) -> bool:
         """Add task to queue if not duplicate.
@@ -197,6 +215,8 @@ class ScanController:
         
         next_phase = phase_order[current_idx + 1]
         
+        # REQUIRED LOG FORMAT: [Phase] PHASE_NAME
+        logger.info(f"[Phase] {next_phase.value.upper()}")
         logger.info(f"=== PHASE TRANSITION: {self.current_phase.value} -> {next_phase.value} ===")
         self.current_phase = next_phase
         

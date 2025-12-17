@@ -179,10 +179,19 @@ class StrixAgent(BaseAgent):
                         break
                     
                     # 输出任务信息
+                    task_signature = f"{task.method} {task.url}"
+                    if task.parameters:
+                        # Sort for deterministic output
+                        sorted_params = "&".join(f"{k}={v}" for k, v in sorted(task.parameters.items()))
+                        task_signature += f"?{sorted_params}"
+                    
+                    logger.info(f"[Task] {task_signature}")
+                    
+                    # Pre-execution progress
+                    progress = self.scan_controller.get_progress_snapshot()
+                    logger.info(f"[Progress] completed={progress['completed']} total={progress['total']} remaining={progress['remaining']}")
+                    
                     if iteration <= 5 or iteration % 10 == 0:
-                        logger.info(f"🔧 Executing Task #{iteration}")
-                        logger.info(f"   - URL: {task.url}")
-                        logger.info(f"   - Method: {task.method}")
                         logger.info(f"   - Phase: {task.phase.value}")
                     
                     # Execute task based on current phase
@@ -193,7 +202,11 @@ class StrixAgent(BaseAgent):
                         import traceback
                         traceback.print_exc()
                         # Continue with next task instead of crashing
-                        continue
+                    finally:
+                        # Mark task complete and log progress
+                        self.scan_controller.finish_task(task)
+                        progress = self.scan_controller.get_progress_snapshot()
+                        logger.info(f"[Progress] completed={progress['completed']} total={progress['total']} remaining={progress['remaining']}")
                         
         except Exception as e:
             logger.error(f"❌ ConcurrentExecutor failed: {e}")
@@ -269,7 +282,10 @@ TASK ID: {task.task_id}
         # Get LLM analysis
         try:
             logger.debug(f"🤖 Calling LLM for phase: {task.phase.value}")
-            response = await self.llm.generate(self.state.get_conversation_history())
+            response = await self.llm.generate(
+                self.state.get_conversation_history(),
+                phase=task.phase.value
+            )
             logger.debug(f"✅ LLM response received ({len(response.content)} chars)")
             self.state.add_message("assistant", response.content)
             
@@ -531,6 +547,11 @@ Provide a concise summary of findings."""
                     expected_indicators=poc_schema.expected_indicators,
                     vulnerability_type=task.source.split(":")[-1] if ":" in task.source else "unknown"
                 )
+                
+                # [VULN] verifying SQLi on POST /login
+                # Construct readable verification target string
+                verify_target = f"{poc.method} {poc.url}"
+                logger.info(f"[VULN] verifying {poc.vulnerability_type} on {verify_target}")
                 
                 # Validate PoC (proper async/await - no nesting)
                 try:
