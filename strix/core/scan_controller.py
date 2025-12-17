@@ -61,7 +61,11 @@ class ScanController:
         # Statistics
         self.tasks_executed = 0  # Tasks started
         self.tasks_finished = 0  # Tasks completed
+        self.running_tasks = 0  # Tasks currently executing
         self.phase_tasks_executed: dict[ScanPhase, int] = {phase: 0 for phase in ScanPhase}
+        
+        # Heartbeat tracking
+        self.last_progress_time: float | None = None
         
         # Initialize with first task
         initial_task = ScanTask(
@@ -87,9 +91,29 @@ class ScanController:
             "remaining": len(self.task_queue)
         }
     
+    def start_task(self, task: ScanTask) -> None:
+        """Mark a task as started (for heartbeat visibility)."""
+        self.running_tasks += 1
+    
     def finish_task(self, task: ScanTask) -> None:
         """Mark a task as finished."""
+        import time
+        self.running_tasks -= 1
         self.tasks_finished += 1
+        self.last_progress_time = time.time()
+    
+    def get_heartbeat_state(self) -> dict[str, int | float | None]:
+        """Get non-blocking snapshot of state for heartbeat.
+        
+        Returns:
+            Dictionary with tasks_finished, tasks_running, tasks_pending, last_progress_time
+        """
+        return {
+            "tasks_finished": self.tasks_finished,
+            "tasks_running": self.running_tasks,
+            "tasks_pending": len(self.task_queue),
+            "last_progress_time": self.last_progress_time,
+        }
     
     def add_task(self, task: ScanTask) -> bool:
         """Add task to queue if not duplicate.

@@ -132,88 +132,122 @@ class StrixAgent(BaseAgent):
         iteration = 0
         max_scan_iterations = 1000  # Safety limit
         
-        logger.info("🔄 Entering main scan loop")
-        logger.info(f"   - Max iterations: {max_scan_iterations}")
+        # CRITICAL: Start heartbeat monitor for long-running operations
+        from strix.core.heartbeat import HeartbeatMonitor
+        import time
         
-        # Initialize concurrent executor for performance
+        scan_start_time = time.time()
+        heartbeat = HeartbeatMonitor(
+            scan_controller=self.scan_controller,
+            interval_seconds=5.0,
+            scan_start_time=scan_start_time
+        )
+        heartbeat_task = asyncio.create_task(heartbeat.run())
+        logger.info("Heartbeat monitor started (5s intervals)")
+        
         try:
-            logger.info("🚀 Initializing ConcurrentExecutor...")
-            async with ConcurrentExecutor(max_concurrent=10) as executor:
-                self.concurrent_executor = executor
-                logger.info("✅ ConcurrentExecutor initialized (10 concurrent requests)")
-                
-                while iteration < max_scan_iterations:
-                    iteration += 1
+            logger.info("🔄 Entering main scan loop")
+            logger.info(f"   - Max iterations: {max_scan_iterations}")
+            
+            # Initialize concurrent executor for performance
+            try:
+                logger.info("🚀 Initializing ConcurrentExecutor...")
+                async with ConcurrentExecutor(max_concurrent=10) as executor:
+                    self.concurrent_executor = executor
+                    logger.info("✅ ConcurrentExecutor initialized (10 concurrent requests)")
                     
-                    # 每10次迭代输出一次进度
-                    if iteration % 10 == 1 or iteration <= 5:
-                        logger.info(f"📊 Iteration {iteration}/{max_scan_iterations}")
-                        logger.info(f"   - Current Phase: {self.scan_controller.current_phase.value}")
-                        logger.info(f"   - Queue Size: {len(self.scan_controller.task_queue)}")
-                        logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
-                    
-                    # Check if scan is complete (ONLY controller decides this)
-                    if self.scan_controller.is_scan_complete():
-                        logger.info("✅ Scan completed (controller determined)")
-                        break
-                    
-                    # Check for phase transition (controller decides)
-                    if self.scan_controller.should_transition_phase():
-                        old_phase = self.scan_controller.current_phase
-                        if not self.scan_controller.transition_to_next_phase():
-                            # No more phases, scan complete
-                            logger.info("✅ No more phases, scan complete")
+                    while iteration < max_scan_iterations:
+                        iteration += 1
+                        
+                        # 每10次迭代输出一次进度
+                        if iteration % 10 == 1 or iteration <= 5:
+                            logger.info(f"📊 Iteration {iteration}/{max_scan_iterations}")
+                            logger.info(f"   - Current Phase: {self.scan_controller.current_phase.value}")
+                            logger.info(f"   - Queue Size: {len(self.scan_controller.task_queue)}")
+                            logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
+                        
+                        # Check if scan is complete (ONLY controller decides this)
+                        if self.scan_controller.is_scan_complete():
+                            logger.info("✅ Scan completed (controller determined)")
                             break
-                        new_phase = self.scan_controller.current_phase
-                        logger.info(f"🔄 Phase Transition: {old_phase.value} → {new_phase.value}")
-                    
-                    # Get next task from controller
-                    task = self.scan_controller.get_next_task()
-                    
-                    if task is None:
-                        logger.warning(f"⚠️  No tasks available at iteration {iteration}")
-                        logger.warning(f"   - Phase: {self.scan_controller.current_phase.value}")
-                        logger.warning(f"   - Queue: {len(self.scan_controller.task_queue)}")
-                        logger.warning(f"   - Is Complete: {self.scan_controller.is_scan_complete()}")
-                        # No tasks available but scan not complete - wait/error
-                        break
-                    
-                    # 输出任务信息
-                    task_signature = f"{task.method} {task.url}"
-                    if task.parameters:
-                        # Sort for deterministic output
-                        sorted_params = "&".join(f"{k}={v}" for k, v in sorted(task.parameters.items()))
-                        task_signature += f"?{sorted_params}"
-                    
-                    logger.info(f"[Task] {task_signature}")
-                    
-                    # Pre-execution progress
-                    progress = self.scan_controller.get_progress_snapshot()
-                    logger.info(f"[Progress] completed={progress['completed']} total={progress['total']} remaining={progress['remaining']}")
-                    
-                    if iteration <= 5 or iteration % 10 == 0:
-                        logger.info(f"   - Phase: {task.phase.value}")
-                    
-                    # Execute task based on current phase
-                    try:
-                        await self._execute_controlled_task(task, tracer)
-                    except Exception as e:
-                        logger.error(f"❌ Task execution failed at iteration {iteration}: {e}")
-                        import traceback
-                        traceback.print_exc()
-                        # Continue with next task instead of crashing
-                    finally:
-                        # Mark task complete and log progress
-                        self.scan_controller.finish_task(task)
+                        
+                        # Check for phase transition (controller decides)
+                        if self.scan_controller.should_transition_phase():
+                            old_phase = self.scan_controller.current_phase
+                            if not self.scan_controller.transition_to_next_phase():
+                                # No more phases, scan complete
+                                logger.info("✅ No more phases, scan complete")
+                                break
+                            new_phase = self.scan_controller.current_phase
+                            logger.info(f"🔄 Phase Transition: {old_phase.value} → {new_phase.value}")
+                        
+                        # Get next task from controller
+                        task = self.scan_controller.get_next_task()
+                        
+                        if task is None:
+                            logger.warning(f"⚠️  No tasks available at iteration {iteration}")
+                            logger.warning(f"   - Phase: {self.scan_controller.current_phase.value}")
+                            logger.warning(f"   - Queue: {len(self.scan_controller.task_queue)}")
+                            logger.warning(f"   - Is Complete: {self.scan_controller.is_scan_complete()}")
+                            # No tasks available but scan not complete - wait/error
+                            break
+                        
+                        # 输出任务信息
+                        task_signature = f"{task.method} {task.url}"
+                        if task.parameters:
+                            # Sort for deterministic output
+                            sorted_params = "&".join(f"{k}={v}" for k, v in sorted(task.parameters.items()))
+                            task_signature += f"?{sorted_params}"
+                        
+                        logger.info(f"[Task] {task_signature}")
+                        
+                        # Pre-execution progress
                         progress = self.scan_controller.get_progress_snapshot()
                         logger.info(f"[Progress] completed={progress['completed']} total={progress['total']} remaining={progress['remaining']}")
                         
+                        if iteration <= 5 or iteration % 10 == 0:
+                            logger.info(f"   - Phase: {task.phase.value}")
+                        
+                        # Execute task based on current phase
+                        try:
+                            # Mark task as running (for heartbeat visibility)
+                            self.scan_controller.start_task(task)
+                            
+                            await self._execute_controlled_task(task, tracer)
+                        except Exception as e:
+                            logger.error(f"❌ Task execution failed at iteration {iteration}: {e}")
+                            import traceback
+                            traceback.print_exc()
+                            # Continue with next task instead of crashing
+                        finally:
+                            # Mark task complete and log progress
+                            self.scan_controller.finish_task(task)
+                            progress = self.scan_controller.get_progress_snapshot()
+                            logger.info(f"[Progress] completed={progress['completed']} total={progress['total']} remaining={progress['remaining']}")
+                            
+                    logger.info(f"=== Agent completed {iteration} iterations ===")
+            
+            except Exception as e:
+                logger.error(f"❌ ConcurrentExecutor failed: {e}")
+                import traceback
+                traceback.print_exc()
+                raise
+            
         except Exception as e:
-            logger.error(f"❌ ConcurrentExecutor failed: {e}")
+            logger.error(f"❌ Scan failed: {e}")
             import traceback
             traceback.print_exc()
-            raise
+        finally:
+            # Stop heartbeat monitor
+            logger.info("Stopping heartbeat monitor")
+            heartbeat.stop()
+            try:
+                await asyncio.wait_for(heartbeat_task, timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.warning("Heartbeat task did not stop cleanly")
+                heartbeat_task.cancel()
         
+        logger.info("🎉 Scan Complete!")      
         # Cleanup
         self.concurrent_executor = None
         logger.info("🧹 ConcurrentExecutor cleaned up")

@@ -1,5 +1,13 @@
+"""LLM Client for interacting with Language Models.
+
+Provides a unified interface for making LLM API calls with memory compression,
+caching, and token usage tracking.
+"""
+
+import json
 import logging
 import os
+import threading
 from dataclasses import dataclass
 from enum import Enum
 from fnmatch import fnmatch
@@ -110,6 +118,7 @@ class LLMResponse:
     scan_id: str | None = None
     step_number: int = 1
     role: StepRole = StepRole.AGENT
+    raw_response: ModelResponse | None = None
 
 
 @dataclass
@@ -135,6 +144,12 @@ class RequestStats:
 
 
 class LLM:
+    """LLM client with memory compression and caching."""
+    
+    # Class-level counter for pending LLM requests (for heartbeat visibility)
+    _pending_requests = 0
+    _pending_lock = threading.Lock()
+
     def __init__(
         self, config: LLMConfig, agent_name: str | None = None, agent_id: str | None = None
     ):
@@ -280,6 +295,10 @@ class LLM:
         phase: str | None = None,
     ) -> LLMResponse:
         """Generate response from LLM."""
+        # Increment pending counter for heartbeat visibility
+        with LLM._pending_lock:
+            LLM._pending_requests += 1
+        
         if phase:
             logger.info(f"[LLM] waiting for analysis... (phase={phase})")
         else:
@@ -376,6 +395,20 @@ class LLM:
             raise LLMRequestFailedError("LLM request failed: OpenAI error", str(e)) from e
         except Exception as e:
             raise LLMRequestFailedError(f"LLM request failed: {type(e).__name__}", str(e)) from e
+        finally:
+            # Decrement pending counter (always runs, even on exception)
+            with LLM._pending_lock:
+                LLM._pending_requests -= 1
+    
+    @classmethod
+    def get_pending_count(cls) -> int:
+        """Get current number of pending LLM requests (thread-safe).
+        
+        Returns:
+            Number of in-flight LLM requests
+        """
+        with cls._pending_lock:
+            return cls._pending_requests
 
     @property
     def usage_stats(self) -> dict[str, dict[str, int | float]]:
