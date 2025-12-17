@@ -25,17 +25,22 @@ class StrixAgent(BaseAgent):
         self.scan_controller: ScanController | None = None
 
     async def execute_scan(self, scan_config: dict[str, Any]) -> dict[str, Any]:
-        """Execute scan using ScanController for deterministic flow.
+        """Execute a scan based on the scan configuration with deterministic flow control."""
+        import logging
+        logger = logging.getLogger(__name__)
         
-        The LLM agent NO LONGER decides:
-        - When to finish scanning
-        - What phase to execute
-        - Whether to continue after finding vulnerabilities
+        # 添加详细的启动日志
+        logger.info("=" * 80)
+        logger.info("🦉 Strix Scan Starting with Deterministic Architecture")
+        logger.info("=" * 80)
         
-        All flow control is delegated to ScanController.
-        """
-        user_instructions = scan_config.get("user_instructions", "")
         targets = scan_config.get("targets", [])
+        user_instructions = scan_config.get("user_instructions", "")
+
+        logger.info(f"📋 Scan Configuration:")
+        logger.info(f"   - Scan ID: {scan_config.get('scan_id', 'unknown')}")
+        logger.info(f"   - Targets: {len(targets)}")
+        logger.info(f"   - User Instructions: {user_instructions[:100] if user_instructions else 'None'}")
 
         # Extract target information
         urls = []
@@ -55,12 +60,26 @@ class StrixAgent(BaseAgent):
 
         # Determine primary target
         primary_target = urls[0] if urls else "http://localhost:8080"
+        logger.info(f"🎯 Primary Target: {primary_target}")
         
         # Extract seed for reproducibility
         seed = scan_config.get("seed")
+        if seed is not None:
+            logger.info(f"🎲 Scan Seed: {seed} (reproducible mode)")
         
         # Initialize ScanController - this is now the flow control authority
-        self.scan_controller = ScanController(initial_target=primary_target, seed=seed)
+        try:
+            logger.info("⚙️  Initializing ScanController...")
+            self.scan_controller = ScanController(initial_target=primary_target, seed=seed)
+            logger.info(f"✅ ScanController initialized successfully")
+            logger.info(f"   - Current Phase: {self.scan_controller.current_phase.value}")
+            logger.info(f"   - Initial Task Queue: {len(self.scan_controller.task_queue)} tasks")
+            logger.info(f"   - HTTP Methods to Test: {', '.join(self.scan_controller.http_methods)}")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize ScanController: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         if seed is not None:
             logger.info(f"Scan initialized with seed {seed} for reproducible results")
@@ -90,6 +109,7 @@ class StrixAgent(BaseAgent):
         
         task_description = "\n".join(task_description_parts)
         
+        logger.info("🚀 Starting controlled scan loop...")
         # Start the controlled scan loop
         return await self._controlled_scan_loop(task_description)
     
@@ -100,47 +120,101 @@ class StrixAgent(BaseAgent):
         """
         from strix.telemetry.tracer import get_global_tracer
         from strix.core.concurrent_executor import ConcurrentExecutor
+        import logging
         
+        logger = logging.getLogger(__name__)
         tracer = get_global_tracer()
         
         # Add initial context
         self.state.add_message("user", initial_context)
+        logger.info("📝 Initial context added to agent state")
         
         iteration = 0
         max_scan_iterations = 1000  # Safety limit
         
+        logger.info("🔄 Entering main scan loop")
+        logger.info(f"   - Max iterations: {max_scan_iterations}")
+        
         # Initialize concurrent executor for performance
-        async with ConcurrentExecutor(max_concurrent=10) as executor:
-            self.concurrent_executor = executor
-            
-            while iteration < max_scan_iterations:
-                iteration += 1
+        try:
+            logger.info("🚀 Initializing ConcurrentExecutor...")
+            async with ConcurrentExecutor(max_concurrent=10) as executor:
+                self.concurrent_executor = executor
+                logger.info("✅ ConcurrentExecutor initialized (10 concurrent requests)")
                 
-                # Check if scan is complete (ONLY controller decides this)
-                if self.scan_controller.is_scan_complete():
-                    break
-                
-                # Check for phase transition (controller decides)
-                if self.scan_controller.should_transition_phase():
-                    if not self.scan_controller.transition_to_next_phase():
-                        # No more phases, scan complete
+                while iteration < max_scan_iterations:
+                    iteration += 1
+                    
+                    # 每10次迭代输出一次进度
+                    if iteration % 10 == 1 or iteration <= 5:
+                        logger.info(f"📊 Iteration {iteration}/{max_scan_iterations}")
+                        logger.info(f"   - Current Phase: {self.scan_controller.current_phase.value}")
+                        logger.info(f"   - Queue Size: {len(self.scan_controller.task_queue)}")
+                        logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
+                    
+                    # Check if scan is complete (ONLY controller decides this)
+                    if self.scan_controller.is_scan_complete():
+                        logger.info("✅ Scan completed (controller determined)")
                         break
-                
-                # Get next task from controller
-                task = self.scan_controller.get_next_task()
-                
-                if task is None:
-                    # No tasks available but scan not complete - wait/error
-                    break
-                
-                # Execute task based on current phase
-                await self._execute_controlled_task(task, tracer)
+                    
+                    # Check for phase transition (controller decides)
+                    if self.scan_controller.should_transition_phase():
+                        old_phase = self.scan_controller.current_phase
+                        if not self.scan_controller.transition_to_next_phase():
+                            # No more phases, scan complete
+                            logger.info("✅ No more phases, scan complete")
+                            break
+                        new_phase = self.scan_controller.current_phase
+                        logger.info(f"🔄 Phase Transition: {old_phase.value} → {new_phase.value}")
+                    
+                    # Get next task from controller
+                    task = self.scan_controller.get_next_task()
+                    
+                    if task is None:
+                        logger.warning(f"⚠️  No tasks available at iteration {iteration}")
+                        logger.warning(f"   - Phase: {self.scan_controller.current_phase.value}")
+                        logger.warning(f"   - Queue: {len(self.scan_controller.task_queue)}")
+                        logger.warning(f"   - Is Complete: {self.scan_controller.is_scan_complete()}")
+                        # No tasks available but scan not complete - wait/error
+                        break
+                    
+                    # 输出任务信息
+                    if iteration <= 5 or iteration % 10 == 0:
+                        logger.info(f"🔧 Executing Task #{iteration}")
+                        logger.info(f"   - URL: {task.url}")
+                        logger.info(f"   - Method: {task.method}")
+                        logger.info(f"   - Phase: {task.phase.value}")
+                    
+                    # Execute task based on current phase
+                    try:
+                        await self._execute_controlled_task(task, tracer)
+                    except Exception as e:
+                        logger.error(f"❌ Task execution failed at iteration {iteration}: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        # Continue with next task instead of crashing
+                        continue
+                        
+        except Exception as e:
+            logger.error(f"❌ ConcurrentExecutor failed: {e}")
+            import traceback
+            traceback.print_exc()
+            raise
         
         # Cleanup
         self.concurrent_executor = None
+        logger.info("🧹 ConcurrentExecutor cleaned up")
         
         # Generate final summary
+        logger.info("📊 Generating final summary...")
         summary = self.scan_controller.get_scan_summary()
+        
+        logger.info("=" * 80)
+        logger.info("🎉 Scan Complete!")
+        logger.info("=" * 80)
+        logger.info(f"   - Total Iterations: {iteration}")
+        logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
+        logger.info(f"   - Final Phase: {self.scan_controller.current_phase.value}")
         
         return {
             "success": True,
@@ -157,6 +231,9 @@ class StrixAgent(BaseAgent):
         """
         import httpx
         import json
+        import logging
+        
+        logger = logging.getLogger(__name__)
         
         # Build phase-specific prompt
         phase_prompt = self._build_phase_prompt(task)
@@ -164,11 +241,16 @@ class StrixAgent(BaseAgent):
         # Execute HTTP request if needed (not for ANALYSIS/REPORT tasks)
         http_result = None
         if task.method in ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]:
+            logger.debug(f"🌐 Executing HTTP request: {task.method} {task.url}")
             # Use concurrent executor if available (performance optimization)
             if hasattr(self, 'concurrent_executor') and self.concurrent_executor:
                 http_result = await self.concurrent_executor.execute_request(task)
             else:
                 http_result = await self._execute_http_request(task)
+            
+            if http_result:
+                status = http_result.get('status_code', 0)
+                logger.debug(f"   Response: {status}")
         
         # Add task context to conversation
         task_context = f"""
@@ -186,7 +268,9 @@ TASK ID: {task.task_id}
         
         # Get LLM analysis
         try:
+            logger.debug(f"🤖 Calling LLM for phase: {task.phase.value}")
             response = await self.llm.generate(self.state.get_conversation_history())
+            logger.debug(f"✅ LLM response received ({len(response.content)} chars)")
             self.state.add_message("assistant", response.content)
             
             # Parse LLM response based on phase (now async)
@@ -194,7 +278,9 @@ TASK ID: {task.task_id}
             
         except Exception as e:
             import logging
-            logging.error(f"Task execution failed: {e}")
+            logging.error(f"❌ Task execution failed: {e}")
+            import traceback
+            traceback.print_exc()
     
     def _build_phase_prompt(self, task: ScanTask) -> str:
         """Build phase-specific prompt for the LLM."""
