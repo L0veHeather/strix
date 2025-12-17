@@ -57,6 +57,16 @@ class HeartbeatMonitor:
                 if self._stop_flag:
                     break
                 
+                if self._stop_flag:
+                    break
+                
+                # Proactive cleanup of stuck tasks
+                # This ensures that if a task hangs (e.g. unexpected async deadlock), it gets cleared
+                try:
+                    self.scan_controller.cleanup_stuck_tasks(timeout_seconds=300.0)
+                except Exception as e:
+                    logger.error(f"Error during stuck task cleanup: {e}")
+
                 self._output_heartbeat()
         except asyncio.CancelledError:
             logger.debug("Heartbeat monitor cancelled")

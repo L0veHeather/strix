@@ -44,20 +44,17 @@ class LLMRequestQueue:
 
         self.max_concurrent = max_concurrent
         self.delay_between_requests = delay_between_requests
-        self._semaphore = threading.BoundedSemaphore(max_concurrent)
+        self._semaphore = asyncio.BoundedSemaphore(max_concurrent)
         self._last_request_time = 0.0
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
 
     async def make_request(self, completion_args: dict[str, Any]) -> ModelResponse:
         try:
-            while not self._semaphore.acquire(timeout=0.2):
-                await asyncio.sleep(0.1)
+            # Acquire semaphore asynchronously
+            await self._semaphore.acquire()
 
             # Reserve the next available request slot based on the prior request end.
-            # Using the future timestamp (old behavior) caused the delay to compound
-            # across concurrent callers, stretching gaps well beyond the intended
-            # rate limit and making the system appear stuck.
-            with self._lock:
+            async with self._lock:
                 now = time.time()
                 next_allowed = max(self._last_request_time + self.delay_between_requests, now)
                 sleep_needed = max(0.0, next_allowed - now)
@@ -68,7 +65,11 @@ class LLMRequestQueue:
 
             return await self._reliable_request(completion_args)
         finally:
-            self._semaphore.release()
+            # Release semaphore
+            try:
+                self._semaphore.release()
+            except ValueError:
+                pass  # Ignore if already released (safety)
 
     @retry(  # type: ignore[misc]
         stop=stop_after_attempt(RETRY_ATTEMPTS),
@@ -81,7 +82,9 @@ class LLMRequestQueue:
         reraise=True,
     )
     async def _reliable_request(self, completion_args: dict[str, Any]) -> ModelResponse:
-        response = completion(**completion_args, stream=False)
+        # CRITICAL: Use acompletion for async execution
+        from litellm import acompletion
+        response = await acompletion(**completion_args, stream=False)
         if isinstance(response, ModelResponse):
             return response
         self._raise_unexpected_response()

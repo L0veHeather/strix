@@ -62,6 +62,7 @@ class ScanController:
         self.tasks_executed = 0  # Tasks started
         self.tasks_finished = 0  # Tasks completed
         self.running_tasks = 0  # Tasks currently executing
+        self.active_tasks: dict[str, float] = {}  # task_id -> start_time
         self.phase_tasks_executed: dict[ScanPhase, int] = {phase: 0 for phase in ScanPhase}
         
         # Heartbeat tracking
@@ -93,14 +94,58 @@ class ScanController:
     
     def start_task(self, task: ScanTask) -> None:
         """Mark a task as started (for heartbeat visibility)."""
+        import time
         self.running_tasks += 1
+        # Track start time for stuck task detection
+        if hasattr(task, 'task_id'): # Ensure task_id exists
+             self.active_tasks[str(task.task_id)] = time.time()
+        else:
+             # Fallback if no specific ID (should exist on ScanTask)
+             self.active_tasks[f"unknown_{time.time()}"] = time.time()
     
     def finish_task(self, task: ScanTask) -> None:
         """Mark a task as finished."""
         import time
         self.running_tasks -= 1
+        
+        # Remove from active tracking
+        if hasattr(task, 'task_id') and str(task.task_id) in self.active_tasks:
+            del self.active_tasks[str(task.task_id)]
+            
         self.tasks_finished += 1
         self.last_progress_time = time.time()
+    
+    def cleanup_stuck_tasks(self, timeout_seconds: float = 300.0) -> int:
+        """Identify and remove tasks that have been running too long.
+        
+        Args:
+            timeout_seconds: Max allowed runtime for a task in seconds.
+            
+        Returns:
+            Number of stuck tasks cleaned up.
+        """
+        import time
+        now = time.time()
+        stuck_cnt = 0
+        
+        # Identify stuck tasks
+        stuck_ids = []
+        for task_id, start_time in self.active_tasks.items():
+            if now - start_time > timeout_seconds:
+                stuck_ids.append(task_id)
+        
+        # Cleanup
+        for tid in stuck_ids:
+            logger.warning(f"Task {tid} exceeded timeout of {timeout_seconds}s - forcing cleanup")
+            del self.active_tasks[tid]
+            self.running_tasks = max(0, self.running_tasks - 1)
+            # We don't increment tasks_finished to indicate failure/timeout
+            stuck_cnt += 1
+            
+        if stuck_cnt > 0:
+            logger.warning(f"Cleaned up {stuck_cnt} stuck tasks")
+            
+        return stuck_cnt
     
     def get_heartbeat_state(self) -> dict[str, int | float | None]:
         """Get non-blocking snapshot of state for heartbeat.
