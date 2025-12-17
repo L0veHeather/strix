@@ -26,6 +26,12 @@ def should_retry_exception(exception: Exception) -> bool:
     return True
 
 
+RETRY_ATTEMPTS = int(os.getenv("LLM_RETRY_ATTEMPTS", "4"))
+RETRY_MULTIPLIER = float(os.getenv("LLM_RETRY_MULTIPLIER", "2"))
+RETRY_MIN_SECONDS = float(os.getenv("LLM_RETRY_MIN_SECONDS", "4"))
+RETRY_MAX_SECONDS = float(os.getenv("LLM_RETRY_MAX_SECONDS", "60"))
+
+
 class LLMRequestQueue:
     def __init__(self, max_concurrent: int = 6, delay_between_requests: float = 5.0):
         rate_limit_delay = os.getenv("LLM_RATE_LIMIT_DELAY")
@@ -47,11 +53,15 @@ class LLMRequestQueue:
             while not self._semaphore.acquire(timeout=0.2):
                 await asyncio.sleep(0.1)
 
+            # Reserve the next available request slot based on the prior request end.
+            # Using the future timestamp (old behavior) caused the delay to compound
+            # across concurrent callers, stretching gaps well beyond the intended
+            # rate limit and making the system appear stuck.
             with self._lock:
                 now = time.time()
-                time_since_last = now - self._last_request_time
-                sleep_needed = max(0, self.delay_between_requests - time_since_last)
-                self._last_request_time = now + sleep_needed
+                next_allowed = max(self._last_request_time + self.delay_between_requests, now)
+                sleep_needed = max(0.0, next_allowed - now)
+                self._last_request_time = next_allowed
 
             if sleep_needed > 0:
                 await asyncio.sleep(sleep_needed)
@@ -61,8 +71,12 @@ class LLMRequestQueue:
             self._semaphore.release()
 
     @retry(  # type: ignore[misc]
-        stop=stop_after_attempt(7),
-        wait=wait_exponential(multiplier=6, min=12, max=150),
+        stop=stop_after_attempt(RETRY_ATTEMPTS),
+        wait=wait_exponential(
+            multiplier=RETRY_MULTIPLIER,
+            min=RETRY_MIN_SECONDS,
+            max=RETRY_MAX_SECONDS,
+        ),
         retry=retry_if_exception(should_retry_exception),
         reraise=True,
     )

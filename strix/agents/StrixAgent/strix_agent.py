@@ -124,6 +124,9 @@ class StrixAgent(BaseAgent):
         
         logger = logging.getLogger(__name__)
         tracer = get_global_tracer()
+        agent_id = self.state.agent_id
+        if tracer and agent_id:
+            tracer.update_agent_status(agent_id=agent_id, status="running")
         
         # Add initial context
         self.state.add_message("user", initial_context)
@@ -167,6 +170,13 @@ class StrixAgent(BaseAgent):
                             logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
                         
                         # Check if scan is complete (ONLY controller decides this)
+                        if tracer and agent_id:
+                            tracer.log_agent_iteration(
+                                agent_id=agent_id,
+                                iteration=iteration,
+                                action=f"phase={self.scan_controller.current_phase.value} queue={len(self.scan_controller.task_queue)}",
+                            )
+
                         if self.scan_controller.is_scan_complete():
                             logger.info("✅ Scan completed (controller determined)")
                             break
@@ -231,13 +241,11 @@ class StrixAgent(BaseAgent):
                 logger.error(f"❌ ConcurrentExecutor failed: {e}")
                 import traceback
                 traceback.print_exc()
-                raise
-            
-        except Exception as e:
-            logger.error(f"❌ Scan failed: {e}")
-            import traceback
-            traceback.print_exc()
+
         finally:
+            if tracer and agent_id:
+                final_status = "completed" if self.scan_controller and self.scan_controller.is_scan_complete() else "failed"
+                tracer.update_agent_status(agent_id=agent_id, status=final_status)
             # Stop heartbeat monitor
             logger.info("Stopping heartbeat monitor")
             heartbeat.stop()
@@ -315,6 +323,15 @@ TASK ID: {task.task_id}
         
         # Get LLM analysis
         try:
+            if tracer and self.state.agent_id:
+                tracer.update_agent_status(agent_id=self.state.agent_id, status="waiting")
+                tracer.log_progress_update(
+                    agent_id=self.state.agent_id,
+                    phase=task.phase.value,
+                    progress=0.0,
+                    message="LLM analysis in progress",
+                )
+
             logger.debug(f"🤖 Calling LLM for phase: {task.phase.value}")
             response = await self.llm.generate(
                 self.state.get_conversation_history(),
@@ -323,6 +340,15 @@ TASK ID: {task.task_id}
             logger.debug(f"✅ LLM response received ({len(response.content)} chars)")
             self.state.add_message("assistant", response.content)
             
+            if tracer and self.state.agent_id:
+                tracer.update_agent_status(agent_id=self.state.agent_id, status="running")
+                tracer.log_progress_update(
+                    agent_id=self.state.agent_id,
+                    phase=task.phase.value,
+                    progress=0.5,
+                    message="LLM analysis completed",
+                )
+
             # Parse LLM response based on phase (now async)
             await self._process_llm_response(task, response.content, tracer)
             
@@ -331,6 +357,15 @@ TASK ID: {task.task_id}
             logging.error(f"❌ Task execution failed: {e}")
             import traceback
             traceback.print_exc()
+
+            if tracer and self.state.agent_id:
+                tracer.update_agent_status(agent_id=self.state.agent_id, status="llm_failed", error_message=str(e))
+                tracer.log_progress_update(
+                    agent_id=self.state.agent_id,
+                    phase=task.phase.value,
+                    progress=0.0,
+                    message=f"LLM failure: {e}",
+                )
     
     def _build_phase_prompt(self, task: ScanTask) -> str:
         """Build phase-specific prompt for the LLM."""
