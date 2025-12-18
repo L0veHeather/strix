@@ -12,6 +12,10 @@ import sys
 from pathlib import Path
 
 import litellm
+import logging
+
+logger = logging.getLogger(__name__)
+
 from docker.errors import DockerException
 from rich.console import Console
 from rich.panel import Panel
@@ -501,6 +505,30 @@ Examples:
         parser.error("No valid targets found")
 
     assign_workspace_subdirs(args.targets_info)
+
+    # Detect localhost targets and warn/fix if needed
+    for target_info in args.targets_info:
+        if target_info["type"] in ("web_application", "api"):
+            url = target_info["details"].get("target_url", "")
+            if url and ("localhost" in url or "127.0.0.1" in url):
+                logger.info(
+                    f"⚠️  Detected localhost target: {url}. "
+                    "Since Strix runs in a Docker sandbox, 'localhost' refers to the container. "
+                    "Mapping to 'host.docker.internal' for host machine access."
+                )
+                new_url = url.replace("localhost", "host.docker.internal").replace("127.0.0.1", "host.docker.internal")
+                target_info["details"]["target_url"] = new_url
+                target_info["original"] = f"{target_info['original']} -> {new_url}"
+        elif target_info["type"] == "ip_address":
+            ip = target_info["details"].get("target_ip", "")
+            if ip == "127.0.0.1":
+                logger.info(
+                    f"⚠️  Detected internal IP target: {ip}. "
+                    "Since Strix runs in a Docker sandbox, '127.0.0.1' refers to the container. "
+                    "Mapping to 'host.docker.internal' for host machine access."
+                )
+                target_info["details"]["target_ip"] = "host.docker.internal"
+                target_info["original"] = f"{target_info['original']} -> host.docker.internal"
 
     return args
 

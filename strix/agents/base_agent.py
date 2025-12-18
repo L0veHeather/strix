@@ -340,17 +340,33 @@ class BaseAgent(metaclass=AgentMeta):
         sandbox_mode = os.getenv("STRIX_SANDBOX_MODE", "false").lower() == "true"
         if not sandbox_mode and self.state.sandbox_id is None:
             from strix.runtime import get_runtime
+            import asyncio
 
             runtime = get_runtime()
-            sandbox_info = await runtime.create_sandbox(
-                self.state.agent_id, self.state.sandbox_token, self.local_sources
-            )
-            self.state.sandbox_id = sandbox_info["workspace_id"]
-            self.state.sandbox_token = sandbox_info["auth_token"]
-            self.state.sandbox_info = sandbox_info
+            try:
+                # Add timeout to sandbox creation to prevent hanging if Docker fails
+                sandbox_info = await asyncio.wait_for(
+                    runtime.create_sandbox(
+                        self.state.agent_id, self.state.sandbox_token, self.local_sources
+                    ),
+                    timeout=120.0
+                )
+                self.state.sandbox_id = sandbox_info["workspace_id"]
+                self.state.sandbox_token = sandbox_info["auth_token"]
+                self.state.sandbox_info = sandbox_info
 
-            if "agent_id" in sandbox_info:
-                self.state.sandbox_info["agent_id"] = sandbox_info["agent_id"]
+                if "agent_id" in sandbox_info:
+                    self.state.sandbox_info["agent_id"] = sandbox_info["agent_id"]
+            except asyncio.TimeoutError:
+                error_msg = "Sandbox initialization timed out after 120s"
+                logger.error(f"Agent {self.state.agent_id}: {error_msg}")
+                self.state.add_error(error_msg)
+                raise RuntimeError(error_msg) from None
+            except Exception as e:
+                error_msg = f"Failed to initialize sandbox: {e}"
+                logger.error(f"Agent {self.state.agent_id}: {error_msg}")
+                self.state.add_error(error_msg)
+                raise
 
         if not self.state.task:
             self.state.task = task

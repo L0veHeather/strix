@@ -59,7 +59,7 @@ class StrixAgent(BaseAgent):
                 local_code.append(details.get("target_path", "unknown"))
 
         # Determine primary target
-        primary_target = urls[0] if urls else "http://localhost:8080"
+        primary_target = urls[0] if urls else "http://host.docker.internal:8080"
         logger.info(f"🎯 Primary Target: {primary_target}")
         
         # Extract seed for reproducibility

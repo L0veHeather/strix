@@ -122,6 +122,7 @@ class DockerRuntime(AbstractRuntime):
                         "TOOL_SERVER_PORT": str(tool_server_port),
                         "TOOL_SERVER_TOKEN": tool_server_token,
                     },
+                    extra_hosts={"host.docker.internal": "host-gateway"},
                     tty=True,
                 )
 
@@ -307,8 +308,12 @@ class DockerRuntime(AbstractRuntime):
         existing_token: str | None = None,
         local_sources: list[dict[str, str]] | None = None,
     ) -> SandboxInfo:
+        import asyncio
+
         scan_id = self._get_scan_id(agent_id)
-        container = self._get_or_create_scan_container(scan_id)
+        
+        # Move blocking Docker calls to a separate thread
+        container = await asyncio.to_thread(self._get_or_create_scan_container, scan_id)
 
         source_copied_key = f"_source_copied_{scan_id}"
         if local_sources and not hasattr(self, source_copied_key):
@@ -321,7 +326,9 @@ class DockerRuntime(AbstractRuntime):
                 if not target_name:
                     target_name = Path(source_path).name or f"target_{index}"
 
-                self._copy_local_directory_to_container(container, source_path, target_name)
+                await asyncio.to_thread(
+                    self._copy_local_directory_to_container, container, source_path, target_name
+                )
             setattr(self, source_copied_key, True)
 
         container_id = container.id
@@ -393,17 +400,25 @@ class DockerRuntime(AbstractRuntime):
 
     async def destroy_sandbox(self, container_id: str) -> None:
         logger.info("Destroying scan container %s", container_id)
-        try:
-            container = self.client.containers.get(container_id)
-            container.stop()
-            container.remove()
+        import asyncio
+
+        def _destroy():
+            try:
+                container = self.client.containers.get(container_id)
+                container.stop()
+                container.remove()
+                return True
+            except NotFound:
+                logger.warning("Container %s not found for destruction.", container_id)
+                return False
+            except DockerException as e:
+                logger.warning("Failed to destroy container %s: %s", container_id, e)
+                return False
+
+        success = await asyncio.to_thread(_destroy)
+        if success:
             logger.info("Successfully destroyed container %s", container_id)
 
-            self._scan_container = None
-            self._tool_server_port = None
-            self._tool_server_token = None
-
-        except NotFound:
-            logger.warning("Container %s not found for destruction.", container_id)
-        except DockerException as e:
-            logger.warning("Failed to destroy container %s: %s", container_id, e)
+        self._scan_container = None
+        self._tool_server_port = None
+        self._tool_server_token = None
