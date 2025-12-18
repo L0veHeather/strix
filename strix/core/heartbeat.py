@@ -96,14 +96,22 @@ class HeartbeatMonitor:
         else:
             last_progress = elapsed  # No progress yet
         
+        # Get active tasks details
+        active_tasks = self.scan_controller.active_tasks
+        oldest_task_age = 0
+        if active_tasks:
+            oldest_start = min(active_tasks.values())
+            oldest_task_age = int(time.time() - oldest_start)
+
         # Output heartbeat log
         logger.info(
             f"[Heartbeat] t={elapsed}s "
-            f"active_agents=1 "  # Current architecture has single agent
-            f"pending_tasks={state['tasks_pending']} "
-            f"running_tasks={state['tasks_running']} "
-            f"finished_tasks={state['tasks_finished']} "
+            f"active_agents=1 "
+            f"pending={state['tasks_pending']} "
+            f"running={state['tasks_running']} "
+            f"finished={state['tasks_finished']} "
             f"llm_pending={llm_pending} "
+            f"oldest_task={oldest_task_age}s "
             f"last_progress={last_progress}s"
         )
     

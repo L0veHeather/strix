@@ -43,7 +43,7 @@ from strix.telemetry.tracer import get_global_tracer
 from strix.core.plugin import get_plugin_manager
 
 
-logging.getLogger().setLevel(logging.ERROR)
+logging.getLogger().setLevel(logging.INFO)
 
 
 def validate_environment() -> None:  # noqa: PLR0912, PLR0915

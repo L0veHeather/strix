@@ -223,7 +223,13 @@ class StrixAgent(BaseAgent):
                             # Mark task as running (for heartbeat visibility)
                             self.scan_controller.start_task(task)
                             
-                            await self._execute_controlled_task(task, tracer)
+                            # CRITICAL: Add timeout to prevent single task from blocking the entire scan
+                            await asyncio.wait_for(
+                                self._execute_controlled_task(task, tracer),
+                                timeout=300.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.error(f"❌ Task {task.task_id} timed out after 300.0s")
                         except Exception as e:
                             logger.error(f"❌ Task execution failed at iteration {iteration}: {e}")
                             import traceback

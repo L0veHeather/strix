@@ -56,7 +56,7 @@ class LLMRequestQueue:
             # Reserve the next available request slot based on the prior request end.
             async with self._lock:
                 now = time.time()
-                next_allowed = max(self._last_request_time + self.delay_between_requests, now)
+                next_allowed = max(self._last_request_time + 1.0, now)
                 sleep_needed = max(0.0, next_allowed - now)
                 self._last_request_time = next_allowed
 
