@@ -82,7 +82,7 @@ def _extract_message_text(msg: dict[str, Any]) -> str:
     return str(content)
 
 
-def _summarize_messages(
+async def _summarize_messages(
     messages: list[dict[str, Any]],
     model: str,
     timeout: int = 600,
@@ -110,7 +110,9 @@ def _summarize_messages(
             "timeout": timeout,
         }
 
-        response = litellm.completion(**completion_args)
+        # Use acompletion for non-blocking summary
+        from litellm import acompletion
+        response = await acompletion(**completion_args)
         summary = response.choices[0].message.content or ""
         if not summary.strip():
             return messages[0]
@@ -156,7 +158,7 @@ class MemoryCompressor:
         if not self.model_name:
             raise ValueError("STRIX_LLM environment variable must be set and not empty")
 
-    def compress_history(
+    async def compress_history(
         self,
         messages: list[dict[str, Any]],
     ) -> list[dict[str, Any]]:
@@ -201,11 +203,13 @@ class MemoryCompressor:
         if total_tokens <= MAX_TOTAL_TOKENS * 0.9:
             return messages
 
+        logger.info(f"Context limit reached ({total_tokens} tokens). Compressing older messages...")
+
         compressed = []
         chunk_size = 10
         for i in range(0, len(old_msgs), chunk_size):
             chunk = old_msgs[i : i + chunk_size]
-            summary = _summarize_messages(chunk, model_name, self.timeout)
+            summary = await _summarize_messages(chunk, model_name, self.timeout)
             if summary:
                 compressed.append(summary)
 

@@ -217,7 +217,7 @@ async def warm_up_llm() -> None:
 
         llm_timeout = int(os.getenv("LLM_TIMEOUT", "600"))
 
-        response = litellm.completion(
+        response = await litellm.acompletion(
             model=model_name,
             messages=test_messages,
             timeout=llm_timeout,

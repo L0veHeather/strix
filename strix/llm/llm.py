@@ -309,7 +309,7 @@ class LLM:
         if identity_message:
             messages.append(identity_message)
 
-        compressed_history = list(self.memory_compressor.compress_history(conversation_history))
+        compressed_history = list(await self.memory_compressor.compress_history(conversation_history))
 
         conversation_history.clear()
         conversation_history.extend(compressed_history)
