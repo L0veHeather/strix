@@ -1,4 +1,4 @@
-.PHONY: help install dev-install format lint type-check test test-cov clean pre-commit setup-dev
+.PHONY: help install dev-install dev-link format lint type-check test test-cov clean pre-commit setup-dev
 
 help:
 	@echo "Available commands:"
@@ -31,6 +31,11 @@ setup-dev: dev-install
 	poetry run pre-commit install
 	@echo "✅ Development environment setup complete!"
 	@echo "Run 'make check-all' to verify everything works correctly."
+
+dev-link:
+	@echo "🔗 Setting up editable install (hot updates)..."
+	python3 -m pip install -e .
+	@echo "✅ Editable install complete. Changes to 'strix/' will take effect immediately."
 
 format:
 	@echo "🎨 Formatting code with ruff..."

@@ -444,6 +444,25 @@ def image_exists(client: Any, image_name: str) -> bool:
         return True
 
 
+def check_scanner_availability(timeout: float = 2.0) -> bool:
+    """Check if the scanner service is reachable on the host machine.
+    
+    This is used as a preflight check to ensure the required 
+    vulnerability scanner container is running.
+    """
+    import socket
+    
+    host = "host.docker.internal"
+    port = 8080
+    
+    try:
+        # We use a simple socket connection test for efficiency
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except (socket.timeout, ConnectionRefusedError, socket.gaierror):
+        return False
+
+
 def update_layer_status(layers_info: dict[str, str], layer_id: str, layer_status: str) -> None:
     if "Pull complete" in layer_status or "Already exists" in layer_status:
         layers_info[layer_id] = "✓"

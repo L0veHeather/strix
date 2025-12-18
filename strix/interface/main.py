@@ -28,6 +28,7 @@ from strix.interface.utils import (
     build_llm_stats_text,
     build_stats_text,
     check_docker_connection,
+    check_scanner_availability,
     clone_repository,
     collect_local_sources,
     generate_run_name,
@@ -195,6 +196,38 @@ def check_docker_installed() -> None:
         sys.exit(1)
 
 
+def check_scanner_ready() -> None:
+    """Preflight check for scanner container availability."""
+    console = Console()
+    
+    # We only perform this check if we are NOT in safe mode or if specific flags are set
+    # For now, we'll make it a mandatory preflight check as per user request
+    if not check_scanner_availability():
+        error_text = Text()
+        error_text.append("❌ ", style="bold red")
+        error_text.append("SCANNER CONTAINER NOT FOUND", style="bold red")
+        error_text.append("\n\n", style="white")
+        error_text.append("The required vulnerability scanner was not detected at ", style="white")
+        error_text.append("host.docker.internal:5000", style="bold yellow")
+        error_text.append(".\n", style="white")
+        error_text.append("\nRequirements:\n", style="white")
+        error_text.append("1. The scanner container MUST be running on your host machine.\n", style="white")
+        error_text.append("2. It MUST be listening on port 5000.\n", style="white")
+        error_text.append("3. Strix must be able to reach your host (host.docker.internal).\n", style="white")
+        
+        error_text.append("\nPlease start the scanner container and try again.\n", style="dim white")
+
+        panel = Panel(
+            error_text,
+            title="[bold red]🛡️  STRIX PREFLIGHT ERROR",
+            title_align="center",
+            border_style="red",
+            padding=(1, 2),
+        )
+        console.print("\n", panel, "\n")
+        sys.exit(1)
+
+
 async def warm_up_llm() -> None:
     console = Console()
 
@@ -310,22 +343,6 @@ Examples:
     )
 
     parser.add_argument(
-        "-D",
-        "--docker",
-        type=str,
-        help="Path to docker-compose.yml or Dockerfile for infrastructure analysis.",
-    )
-
-    parser.add_argument(
-        "-C",
-        "--container",
-        type=str,
-        action="append",
-        help="Name or ID of an existing Docker container to attach for monitoring/gray-box testing. "
-        "Can be specified multiple times.",
-    )
-
-    parser.add_argument(
         "-s",
         "--scope",
         type=str,
@@ -389,16 +406,6 @@ Examples:
         help=(
             "Run in non-interactive mode (no TUI, exits on completion). "
             "Default is interactive mode with TUI."
-        ),
-    )
-
-    parser.add_argument(
-        "--deploy",
-        action="store_true",
-        help=(
-            "Automatically deploy target using docker-compose before testing. "
-            "Use with --docker to specify the compose file. "
-            "Enables IAST-like testing with container log access."
         ),
     )
 
@@ -860,6 +867,8 @@ def main() -> None:
     check_docker_installed()
     pull_docker_image()
 
+    check_scanner_ready()
+
     validate_environment()
     asyncio.run(warm_up_llm())
 
@@ -891,44 +900,6 @@ def main() -> None:
             target_info["details"]["cloned_repo_path"] = cloned_path
 
     args.local_sources = collect_local_sources(args.targets_info)
-
-    # Handle target deployment if requested
-    deployment_manager = None
-    # Handle target deployment if requested
-    deployment_manager = None
-    if (args.deploy and args.docker) or getattr(args, "container", None):
-        from strix.runtime.deployment_manager import TargetDeploymentManager
-        from strix.tools.container_tools import set_deployment_manager
-        
-        console = Console()
-        deployment_manager = TargetDeploymentManager()
-        try:
-            if args.deploy and args.docker:
-                console.print("[bold cyan]📦 Deploying target application...[/bold cyan]")
-                deployment_manager.deploy(args.docker)
-            
-            if getattr(args, "container", None):
-                console.print("[bold cyan]🔗 Attaching to external containers...[/bold cyan]")
-                for container_id in args.container:
-                    deployment_manager.attach_container(container_id)
-
-            set_deployment_manager(deployment_manager)
-            
-            # Wait for containers to be ready if deployed
-            if args.deploy and args.docker:
-                console.print("[bold cyan]⏳ Waiting for containers to be ready...[/bold cyan]")
-                deployment_manager.wait_for_ready(timeout=120)
-                console.print("[bold green]✅ Deployment ready, starting scan...[/bold green]\n")
-            elif getattr(args, "container", None):
-                console.print("[bold green]✅ Containers attached, starting scan...[/bold green]\n")
-
-        except Exception as e:
-            console.print(f"[bold red]❌ Failed to setup deployment: {e}[/bold red]")
-            sys.exit(1)
-    
-    import atexit
-    if deployment_manager:
-        atexit.register(deployment_manager.teardown)
 
     if args.non_interactive:
         asyncio.run(run_cli(args))
