@@ -93,3 +93,37 @@ clean:
 
 dev: format lint type-check test
 	@echo "✅ Development cycle complete!"
+
+# ============================================================================
+# Docker Sandbox Management
+# ============================================================================
+
+SANDBOX_IMAGE ?= strix-sandbox:local
+SANDBOX_DOCKERFILE ?= containers/Dockerfile
+
+build-sandbox:
+	@echo "🐳 Building strix-sandbox image..."
+	docker build -t $(SANDBOX_IMAGE) -f $(SANDBOX_DOCKERFILE) .
+	@echo "✅ Sandbox image built: $(SANDBOX_IMAGE)"
+
+build-sandbox-nocache:
+	@echo "🐳 Building strix-sandbox image (no cache)..."
+	docker build --no-cache -t $(SANDBOX_IMAGE) -f $(SANDBOX_DOCKERFILE) .
+	@echo "✅ Sandbox image built: $(SANDBOX_IMAGE)"
+
+sandbox-shell:
+	@echo "🐚 Opening shell in sandbox container..."
+	docker run --rm -it --entrypoint /bin/bash $(SANDBOX_IMAGE)
+
+sandbox-tools:
+	@echo "📦 Listing tools in sandbox image..."
+	docker run --rm --entrypoint /bin/bash $(SANDBOX_IMAGE) -c "ls -la /app/strix/tools/"
+
+dev-mode:
+	@echo "🔧 Starting strix in development mode (volume mounts enabled)..."
+	STRIX_DEV_MODE=true poetry run strix
+
+clean-sandbox:
+	@echo "🧹 Removing strix scan containers..."
+	docker ps -a --filter "label=strix-scan-id" -q | xargs -r docker rm -f
+	@echo "✅ Sandbox containers cleaned!"

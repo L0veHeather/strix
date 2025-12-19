@@ -14,7 +14,45 @@ from docker.models.containers import Container
 from .runtime import AbstractRuntime, SandboxInfo
 
 
-STRIX_IMAGE = os.getenv("STRIX_IMAGE", "ghcr.io/usestrix/strix-sandbox:0.1.10")
+# Image resolution order:
+# 1. STRIX_IMAGE env var (explicit override)
+# 2. Local tag "strix-sandbox:local" (offline mode)
+# 3. Remote ghcr.io image (fallback, requires network) - only for PyPI installs
+STRIX_IMAGE_REMOTE = "ghcr.io/usestrix/strix-sandbox:0.1.10"
+STRIX_IMAGE_LOCAL = "strix-sandbox:local"
+STRIX_IMAGE = os.getenv("STRIX_IMAGE", STRIX_IMAGE_LOCAL)
+
+# Development mode: mount local source code into container for hot-reload
+# Set STRIX_DEV_MODE=true to enable volume mounts (no rebuild needed)
+STRIX_DEV_MODE = os.getenv("STRIX_DEV_MODE", "false").lower() == "true"
+
+# Auto-detect project root (where pyproject.toml lives)
+def _find_project_root() -> Path | None:
+    """Find the strix project root directory."""
+    current = Path(__file__).resolve()
+    for parent in current.parents:
+        if (parent / "pyproject.toml").exists() and (parent / "strix").is_dir():
+            return parent
+    return None
+
+STRIX_PROJECT_ROOT = _find_project_root()
+
+def _is_dev_install() -> bool:
+    """Check if this is a development/source install (not from PyPI).
+    
+    Returns True if:
+    - Running from source (project root with .git exists)
+    - STRIX_DEV_MODE is enabled
+    """
+    if STRIX_DEV_MODE:
+        return True
+    if STRIX_PROJECT_ROOT and (STRIX_PROJECT_ROOT / ".git").is_dir():
+        return True
+    return False
+
+# If dev install, don't auto-pull remote image (local code may differ)
+STRIX_IS_DEV_INSTALL = _is_dev_install()
+
 logger = logging.getLogger(__name__)
 
 
@@ -29,6 +67,31 @@ class DockerRuntime(AbstractRuntime):
         self._scan_container: Container | None = None
         self._tool_server_port: int | None = None
         self._tool_server_token: str | None = None
+
+    def _build_dev_volumes(self) -> dict[str, dict[str, str]] | None:
+        """Build volume mounts for development mode.
+
+        Mounts local strix/tools/ and strix/runtime/ into container
+        for hot-reload without rebuilding the image.
+        """
+        if not STRIX_PROJECT_ROOT:
+            logger.warning("Dev mode enabled but cannot find project root")
+            return None
+
+        volumes = {}
+        # Mount tools directory (all tool modules)
+        local_tools = STRIX_PROJECT_ROOT / "strix" / "tools"
+        if local_tools.is_dir():
+            volumes[str(local_tools)] = {"bind": "/app/strix/tools", "mode": "ro"}
+            logger.debug(f"Dev mount: {local_tools} -> /app/strix/tools")
+
+        # Mount runtime directory (tool_server.py, etc.)
+        local_runtime = STRIX_PROJECT_ROOT / "strix" / "runtime"
+        if local_runtime.is_dir():
+            volumes[str(local_runtime)] = {"bind": "/app/strix/runtime", "mode": "ro"}
+            logger.debug(f"Dev mount: {local_runtime} -> /app/strix/runtime")
+
+        return volumes if volumes else None
 
     def _generate_sandbox_token(self) -> str:
         return secrets.token_urlsafe(32)
@@ -104,6 +167,11 @@ class DockerRuntime(AbstractRuntime):
                 self._tool_server_port = tool_server_port
                 self._tool_server_token = tool_server_token
 
+                # Build volume mounts for dev mode (hot-reload local code)
+                volumes = self._build_dev_volumes() if STRIX_DEV_MODE else None
+                if volumes:
+                    logger.info("Dev mode: mounting local source code into container")
+
                 container = self.client.containers.run(
                     STRIX_IMAGE,
                     command="sleep infinity",
@@ -115,14 +183,19 @@ class DockerRuntime(AbstractRuntime):
                         f"{tool_server_port}/tcp": tool_server_port,
                     },
                     cap_add=["NET_ADMIN", "NET_RAW"],
-                    labels={"strix-scan-id": scan_id},
+                    labels={
+                        "strix-scan-id": scan_id,
+                        "strix-dev-mode": str(STRIX_DEV_MODE).lower(),
+                    },
                     environment={
                         "PYTHONUNBUFFERED": "1",
                         "CAIDO_PORT": str(caido_port),
                         "TOOL_SERVER_PORT": str(tool_server_port),
                         "TOOL_SERVER_TOKEN": tool_server_token,
+                        "STRIX_DEV_MODE": str(STRIX_DEV_MODE).lower(),
                     },
                     extra_hosts={"host.docker.internal": "host-gateway"},
+                    volumes=volumes,
                     tty=True,
                 )
 
