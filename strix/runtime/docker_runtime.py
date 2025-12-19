@@ -395,8 +395,8 @@ class DockerRuntime(AbstractRuntime):
         def _destroy():
             try:
                 container = self.client.containers.get(container_id)
-                container.stop()
-                container.remove()
+                container.stop(timeout=5)
+                container.remove(force=True)
                 return True
             except NotFound:
                 logger.warning("Container %s not found for destruction.", container_id)
@@ -412,3 +412,23 @@ class DockerRuntime(AbstractRuntime):
         self._scan_container = None
         self._tool_server_port = None
         self._tool_server_token = None
+
+    def cleanup(self) -> None:
+        """Synchronous cleanup for atexit/signals."""
+        if self._scan_container:
+            try:
+                container_id = self._scan_container.id
+                logger.info("Cleaning up container %s", container_id)
+                try:
+                    self._scan_container.stop(timeout=2)
+                except Exception:
+                    pass
+                try:
+                    self._scan_container.remove(force=True)
+                except Exception:
+                    pass
+                logger.info("Successfully cleaned up container %s", container_id)
+            except Exception as e:
+                logger.warning("Error during Docker cleanup: %s", e)
+            finally:
+                self._scan_container = None

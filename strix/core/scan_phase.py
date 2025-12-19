@@ -53,7 +53,8 @@ class ScanTask:
         """Generate unique signature for deduplication."""
         # Sort params for consistency
         param_str = "&".join(f"{k}={v}" for k, v in sorted(self.parameters.items()))
-        return f"{self.method}:{self.url}:{param_str}"
+        # Include phase and source to allow different types of testing on the same URL
+        return f"{self.phase.value}:{self.source}:{self.method}:{self.url}:{param_str}"
     
     def __hash__(self) -> int:
         return hash(self.signature())

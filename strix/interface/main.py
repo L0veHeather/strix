@@ -28,7 +28,6 @@ from strix.interface.utils import (
     build_llm_stats_text,
     build_stats_text,
     check_docker_connection,
-    check_scanner_availability,
     clone_repository,
     collect_local_sources,
     generate_run_name,
@@ -196,36 +195,6 @@ def check_docker_installed() -> None:
         sys.exit(1)
 
 
-def check_scanner_ready() -> None:
-    """Preflight check for scanner container availability."""
-    console = Console()
-    
-    # We only perform this check if we are NOT in safe mode or if specific flags are set
-    # For now, we'll make it a mandatory preflight check as per user request
-    if not check_scanner_availability():
-        error_text = Text()
-        error_text.append("❌ ", style="bold red")
-        error_text.append("SCANNER CONTAINER NOT FOUND", style="bold red")
-        error_text.append("\n\n", style="white")
-        error_text.append("The required vulnerability scanner was not detected at ", style="white")
-        error_text.append("host.docker.internal:5000", style="bold yellow")
-        error_text.append(".\n", style="white")
-        error_text.append("\nRequirements:\n", style="white")
-        error_text.append("1. The scanner container MUST be running on your host machine.\n", style="white")
-        error_text.append("2. It MUST be listening on port 5000.\n", style="white")
-        error_text.append("3. Strix must be able to reach your host (host.docker.internal).\n", style="white")
-        
-        error_text.append("\nPlease start the scanner container and try again.\n", style="dim white")
-
-        panel = Panel(
-            error_text,
-            title="[bold red]🛡️  STRIX PREFLIGHT ERROR",
-            title_align="center",
-            border_style="red",
-            padding=(1, 2),
-        )
-        console.print("\n", panel, "\n")
-        sys.exit(1)
 
 
 async def warm_up_llm() -> None:
@@ -495,18 +464,6 @@ Examples:
         except ValueError as e:
             parser.error(str(e))
 
-    # Process explicit docker argument
-    if args.docker:
-        try:
-            target_type, target_dict = infer_target_type(args.docker)
-            if target_type != "infrastructure":
-                 parser.error(f"Invalid docker config: {args.docker}. Must be a file.")
-            
-            args.targets_info.append(
-                {"type": target_type, "details": target_dict, "original": args.docker}
-            )
-        except ValueError as e:
-            parser.error(str(e))
 
     if not args.targets_info:
         parser.error("No valid targets found")
@@ -848,6 +805,41 @@ def _run_scope_validation(args: argparse.Namespace) -> None:
 
 
 def main() -> None:
+    try:
+        _main_impl()
+    except Exception:
+        import traceback
+        console = Console()
+        error_text = Text("\n❌ CRITICAL STARTUP ERROR\n", style="bold red")
+        error_text.append(traceback.format_exc(), style="dim red")
+        
+        panel = Panel(
+            error_text,
+            title="[bold red]SHUTDOWN TRACEBACK",
+            border_style="red",
+            padding=(1, 2)
+        )
+        console.print("\n")
+        console.print(panel)
+        
+        console.print("\n[bold yellow]Press ENTER to exit...[/]")
+        try:
+            input()
+        except (KeyboardInterrupt, EOFError):
+            pass
+        sys.exit(1)
+    finally:
+        # Final cleanup attempt
+        try:
+            from strix.runtime import get_runtime
+            runtime = get_runtime()
+            if hasattr(runtime, "cleanup"):
+                runtime.cleanup()
+        except Exception:
+            pass
+
+
+def _main_impl() -> None:
     if sys.platform == "win32":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
@@ -866,8 +858,6 @@ def main() -> None:
 
     check_docker_installed()
     pull_docker_image()
-
-    check_scanner_ready()
 
     validate_environment()
     asyncio.run(warm_up_llm())

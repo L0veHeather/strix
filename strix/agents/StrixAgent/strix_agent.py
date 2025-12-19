@@ -1,4 +1,8 @@
+import asyncio
+import uuid
 from typing import Any, Optional
+
+import httpx
 
 from strix.agents.base_agent import BaseAgent
 from strix.core.scan_controller import ScanController
@@ -42,6 +46,10 @@ class StrixAgent(BaseAgent):
         logger.info(f"   - Targets: {len(targets)}")
         logger.info(f"   - User Instructions: {user_instructions[:100] if user_instructions else 'None'}")
 
+        # Initialize sandbox and state
+        # 我们在这里跳过在 state 中添加 user 消息，因为后面会由 execute_scan 统一添加包含完整上下文的消息
+        await self._initialize_sandbox_and_state(user_instructions or "Start automated scan", add_user_message=False)
+
         # Extract target information
         urls = []
         repositories = []
@@ -76,6 +84,8 @@ class StrixAgent(BaseAgent):
             logger.info(f"   - Initial Task Queue: {len(self.scan_controller.task_queue)} tasks")
             logger.info(f"   - HTTP Methods to Test: {', '.join(self.scan_controller.http_methods)}")
         except Exception as e:
+            import sys
+            print(f"❌ Failed to initialize ScanController: {e}", file=sys.stderr)
             logger.error(f"❌ Failed to initialize ScanController: {e}")
             import traceback
             traceback.print_exc()
@@ -130,10 +140,12 @@ class StrixAgent(BaseAgent):
         
         # Add initial context
         self.state.add_message("user", initial_context)
-        logger.info("📝 Initial context added to agent state")
         
         iteration = 0
         max_scan_iterations = 1000  # Safety limit
+        
+        # Track agents created for each phase to avoid double registration
+        phase_agents = {}
         
         # CRITICAL: Start heartbeat monitor for long-running operations
         from strix.core.heartbeat import HeartbeatMonitor
@@ -162,19 +174,29 @@ class StrixAgent(BaseAgent):
                     while iteration < max_scan_iterations:
                         iteration += 1
                         
-                        # 每10次迭代输出一次进度
-                        if iteration % 10 == 1 or iteration <= 5:
-                            logger.info(f"📊 Iteration {iteration}/{max_scan_iterations}")
-                            logger.info(f"   - Current Phase: {self.scan_controller.current_phase.value}")
-                            logger.info(f"   - Queue Size: {len(self.scan_controller.task_queue)}")
-                            logger.info(f"   - Vulnerabilities Found: {len(self.scan_controller.vulnerabilities)}")
+                        current_phase = self.scan_controller.current_phase
                         
+                        # Register/Switch to phase-specific agent for TUI visibility
+                        if current_phase not in phase_agents:
+                            phase_agent_name = f"Strix {current_phase.value.replace('_', ' ').title()}"
+                            phase_agent_id = f"agent_{current_phase.value}_{uuid.uuid4().hex[:4]}"
+                            if tracer:
+                                tracer.log_agent_creation(
+                                    agent_id=phase_agent_id,
+                                    name=phase_agent_name,
+                                    task=f"Executing {current_phase.value} phase",
+                                    parent_id=agent_id
+                                )
+                            phase_agents[current_phase] = phase_agent_id
+                        
+                        current_phase_agent_id = phase_agents[current_phase]
+
                         # Check if scan is complete (ONLY controller decides this)
-                        if tracer and agent_id:
+                        if tracer:
                             tracer.log_agent_iteration(
-                                agent_id=agent_id,
+                                agent_id=current_phase_agent_id,
                                 iteration=iteration,
-                                action=f"phase={self.scan_controller.current_phase.value} queue={len(self.scan_controller.task_queue)}",
+                                action=f"phase={current_phase.value} queue={len(self.scan_controller.task_queue)}",
                             )
 
                         if self.scan_controller.is_scan_complete():
@@ -225,16 +247,13 @@ class StrixAgent(BaseAgent):
                             
                             # CRITICAL: Add timeout to prevent single task from blocking the entire scan
                             await asyncio.wait_for(
-                                self._execute_controlled_task(task, tracer),
+                                self._execute_controlled_task(task, tracer, current_phase_agent_id),
                                 timeout=300.0
                             )
                         except asyncio.TimeoutError:
                             logger.error(f"❌ Task {task.task_id} timed out after 300.0s")
                         except Exception as e:
-                            logger.error(f"❌ Task execution failed at iteration {iteration}: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            # Continue with next task instead of crashing
+                            logger.error(f"❌ Task failed: {e}")
                         finally:
                             # Mark task complete and log progress
                             self.scan_controller.finish_task(task)
@@ -285,11 +304,19 @@ class StrixAgent(BaseAgent):
             "vulnerabilities": self.scan_controller.vulnerabilities
         }
     
-    async def _execute_controlled_task(self, task: ScanTask, tracer: Optional[Tracer]) -> None:
-        """Execute a single task under controller supervision.
-        
-        The LLM analyzes the task but does NOT decide flow control.
-        """
+    async def _execute_controlled_task(self, task: ScanTask, tracer: Optional[Tracer], agent_id_override: Optional[str] = None) -> None:
+        """Execute a specific scan task using the LLM with deterministic context."""
+        active_agent_id = agent_id_override or self.state.agent_id
+        phase = task.phase
+
+        # Update TUI status via tracer
+        if tracer:
+            tracer.log_progress_update(
+                agent_id=active_agent_id,
+                phase=phase.value.lower(),
+                progress=0.0,
+                message="LLM analysis in progress"
+            )
         import httpx
         import json
         import logging
@@ -346,20 +373,22 @@ TASK ID: {task.task_id}
             logger.debug(f"✅ LLM response received ({len(response.content)} chars)")
             self.state.add_message("assistant", response.content)
             
-            if tracer and self.state.agent_id:
-                tracer.update_agent_status(agent_id=self.state.agent_id, status="running")
+            if tracer:
+                tracer.update_agent_status(agent_id=active_agent_id, status="running")
                 tracer.log_progress_update(
-                    agent_id=self.state.agent_id,
-                    phase=task.phase.value,
+                    agent_id=active_agent_id,
+                    phase=phase.value.lower(),
                     progress=0.5,
                     message="LLM analysis completed",
                 )
 
             # Parse LLM response based on phase (now async)
-            await self._process_llm_response(task, response.content, tracer)
+            await self._process_llm_response(task, response.content, tracer, active_agent_id)
             
         except Exception as e:
+            import sys
             import logging
+            print(f"❌ Task execution failed: {e}", file=sys.stderr)
             logging.error(f"❌ Task execution failed: {e}")
             import traceback
             traceback.print_exc()
@@ -498,11 +527,28 @@ Provide a concise summary of findings."""
             import logging
             logging.error(f"HTTP request failed: {e}")
             return {"status_code": 0, "error": str(e)}
+
+    def _extract_json(self, content: str) -> Optional[str]:
+        """Robutsly extract JSON from a potentially messy LLM response."""
+        import re
+        
+        # 1. Try to find JSON in markdown blocks
+        md_json = re.search(r'```json\s*(\{[\s\S]*?\})\s*```', content)
+        if md_json:
+            return md_json.group(1).strip()
+            
+        # 2. Try to find the first { and last }
+        first_brace = content.find('{')
+        last_brace = content.rfind('}')
+        
+        if first_brace != -1 and last_brace != -1 and last_brace > first_brace:
+            return content[first_brace:last_brace+1].strip()
+            
+        return None
     
-    async def _process_llm_response(self, task: ScanTask, content: str, tracer: Optional[Tracer]) -> None:
+    async def _process_llm_response(self, task: ScanTask, content: str, tracer: Optional[Tracer], agent_id: Optional[str] = None) -> None:
         """Process LLM response and update controller state with schema validation."""
         import json
-        import re
         import logging
         from pydantic import ValidationError
         from strix.core.phase_schemas import (
@@ -515,14 +561,21 @@ Provide a concise summary of findings."""
         
         logger = logging.getLogger(__name__)
         
-        # Extract JSON from response
-        json_match = re.search(r'\{[\s\S]*\}', content)
-        if not json_match:
+        # Robust JSON extraction
+        raw_json = self._extract_json(content)
+        if not raw_json:
             logger.warning(f"No JSON found in LLM response for phase {task.phase.value}")
+            if tracer and agent_id:
+                # Log the raw content for debugging if no JSON found
+                tracer.log_chat(
+                    agent_id=agent_id,
+                    role="assistant",
+                    content=f"Error: No JSON found in response. Raw output:\n\n{content}"
+                )
             return
         
         try:
-            raw_result = json.loads(json_match.group())
+            raw_result = json.loads(raw_json)
         except json.JSONDecodeError as e:
             logger.error(f"Invalid JSON from LLM: {e}")
             return

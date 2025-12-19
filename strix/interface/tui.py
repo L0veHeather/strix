@@ -370,9 +370,16 @@ class StrixTUIApp(App):  # type: ignore[misc]
     def _setup_cleanup_handlers(self) -> None:
         def cleanup_on_exit() -> None:
             self.tracer.cleanup()
+            try:
+                from strix.runtime import get_runtime
+                runtime = get_runtime()
+                if hasattr(runtime, "cleanup"):
+                    runtime.cleanup()
+            except Exception:
+                pass
 
         def signal_handler(_signum: int, _frame: Any) -> None:
-            self.tracer.cleanup()
+            cleanup_on_exit()
             sys.exit(0)
 
         atexit.register(cleanup_on_exit)
@@ -406,13 +413,6 @@ class StrixTUIApp(App):  # type: ignore[misc]
             chat_history = VerticalScroll(chat_display, id="chat_history")
             chat_history.can_focus = True
 
-            status_text = Static("", id="status_text")
-            keymap_indicator = Static("", id="keymap_indicator")
-
-            agent_status_display = Horizontal(
-                status_text, keymap_indicator, id="agent_status_display", classes="hidden"
-            )
-
             chat_prompt = Static("> ", id="chat_prompt")
             chat_input = ChatTextArea(
                 "",
@@ -430,16 +430,10 @@ class StrixTUIApp(App):  # type: ignore[misc]
             agents_tree.guide_depth = 3
             agents_tree.guide_style = "dashed"
 
-            content_container.mount(chat_area_container)
             content_container.mount(agents_tree)
-            
-            # Create stats panel
-            stats_display = Static("", id="stats_display")
-            stats_panel = Vertical(stats_display, id="stats_panel")
-            content_container.mount(stats_panel)
+            content_container.mount(chat_area_container)
 
             chat_area_container.mount(chat_history)
-            chat_area_container.mount(agent_status_display)
             chat_area_container.mount(chat_input_container)
 
             self.call_after_refresh(self._focus_chat_input)
@@ -521,8 +515,6 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
         self._update_chat_view()
 
-        self._update_agent_status_display()
-        self._update_stats_display()
 
     def _update_agent_node(self, agent_id: str, agent_data: dict[str, Any]) -> bool:
         if agent_id not in self.agent_nodes:

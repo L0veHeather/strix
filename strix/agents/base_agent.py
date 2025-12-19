@@ -334,7 +334,7 @@ class BaseAgent(metaclass=AgentMeta):
                 "Execution paused. I'm now waiting for new instructions or any updates.",
             )
 
-    async def _initialize_sandbox_and_state(self, task: str) -> None:
+    async def _initialize_sandbox_and_state(self, task: str, add_user_message: bool = True) -> None:
         import os
 
         sandbox_mode = os.getenv("STRIX_SANDBOX_MODE", "false").lower() == "true"
@@ -371,7 +371,8 @@ class BaseAgent(metaclass=AgentMeta):
         if not self.state.task:
             self.state.task = task
 
-        self.state.add_message("user", task)
+        if add_user_message:
+            self.state.add_message("user", task)
 
     async def _process_iteration(self, tracer: Optional["Tracer"]) -> bool:
         try:

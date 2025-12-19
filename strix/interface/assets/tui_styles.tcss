@@ -61,40 +61,7 @@ Screen {
     scrollbar-size: 1 1;
 }
 
-#agent_status_display {
-    height: 1;
-    background: transparent;
-    margin: 0;
-    padding: 0 1;
-}
 
-#agent_status_display.hidden {
-    display: none;
-}
-
-#status_text {
-    width: 1fr;
-    height: 100%;
-    background: transparent;
-    color: #a3a3a3;
-    text-align: left;
-    content-align: left middle;
-    text-style: italic;
-    margin: 0;
-    padding: 0;
-}
-
-#keymap_indicator {
-    width: auto;
-    height: 100%;
-    background: transparent;
-    color: #737373;
-    text-align: right;
-    content-align: right middle;
-    text-style: none;
-    margin: 0;
-    padding: 0;
-}
 
 #chat_input_container {
     height: 3;
@@ -679,18 +646,6 @@ HelpScreen {
     text-style: none;
 }
 
-#stats_panel {
-    width: 35;
-    height: 100%;
-    border: solid cyan;
-    margin-left: 1;
-}
-
-#stats_display {
-    width: 100%;
-    height: 100%;
-    padding: 1 2;
-}
 
 RestartScreen {
     align: center middle;
