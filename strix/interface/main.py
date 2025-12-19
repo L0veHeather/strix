@@ -350,6 +350,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Exit immediately when an unhandled async error occurs.",
+    )
+
+    parser.add_argument(
         "--instruction",
         type=str,
         help="Custom instructions for the penetration test. This can be "

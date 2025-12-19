@@ -1,4 +1,6 @@
+import asyncio
 import atexit
+import logging
 import signal
 import sys
 from typing import Any
@@ -12,6 +14,8 @@ from strix.llm.config import LLMConfig
 from strix.telemetry.tracer import Tracer, set_global_tracer
 
 from .utils import get_severity_color
+
+logger = logging.getLogger(__name__)
 
 
 async def run_cli(args: Any) -> None:  # noqa: PLR0915
@@ -130,6 +134,26 @@ async def run_cli(args: Any) -> None:  # noqa: PLR0915
         signal.signal(signal.SIGHUP, signal_handler)
 
     set_global_tracer(tracer)
+
+    # Set up global exception handler for CLI mode (parity with TUI)
+    loop = asyncio.get_running_loop()
+
+    def _cli_exception_handler(_loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        exc = context.get("exception")
+        msg = context.get("message") or "Unhandled asyncio exception"
+
+        if exc:
+            logger.exception("CLI asyncio error: %r", exc)
+            if tracer:
+                tracer.log_chat_message(
+                    content=f"Asyncio error: {exc!r}",
+                    role="system",
+                    metadata={"type": "loop_exception"},
+                )
+        else:
+            logger.error("CLI asyncio error: %s", msg)
+
+    loop.set_exception_handler(_cli_exception_handler)
 
     try:
         console.print()

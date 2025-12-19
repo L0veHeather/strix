@@ -1,8 +1,21 @@
 import uuid
 from datetime import UTC, datetime
+from enum import Enum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class AgentLifecycle(str, Enum):
+    """Agent lifecycle states for observability."""
+
+    CREATED = "created"    # __init__ completed, not yet started
+    STARTED = "started"    # entered agent_loop / execute_scan
+    RUNNING = "running"    # actively iterating (LLM / tool)
+    WAITING = "waiting"    # waiting for user/sub-agent input
+    FAILED = "failed"      # terminated with error
+    FINISHED = "finished"  # completed successfully
+    STOPPED = "stopped"    # terminated by user/system
 
 
 def _generate_agent_id() -> str:

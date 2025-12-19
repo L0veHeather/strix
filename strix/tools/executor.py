@@ -2,6 +2,17 @@ import inspect
 import os
 from typing import Any
 
+
+class ToolExecutionError(RuntimeError):
+    """Standardized tool execution failure."""
+
+    def __init__(self, tool_name: str, args: dict[str, Any], original: Exception):
+        self.tool_name = tool_name
+        self.tool_args = args
+        self.original = original
+        message = f"Tool '{tool_name}' failed: {original!r}"
+        super().__init__(message)
+
 import httpx
 
 
@@ -62,10 +73,11 @@ async def _execute_tool_in_sandbox(tool_name: str, agent_state: Any, **kwargs: A
         "Content-Type": "application/json",
     }
 
-    async with httpx.AsyncClient(trust_env=False) as client:
+    # Timeout: 300s for long-running tools (e.g., browser automation, large scans)
+    async with httpx.AsyncClient(trust_env=False, timeout=httpx.Timeout(300.0)) as client:
         try:
             response = await client.post(
-                request_url, json=request_data, headers=headers, timeout=None
+                request_url, json=request_data, headers=headers
             )
             response.raise_for_status()
             response_data = response.json()
@@ -211,6 +223,14 @@ async def _execute_single_tool(
     if tracer:
         execution_id = tracer.log_tool_execution_start(agent_id, tool_name, args)
 
+    # TEST HOOK: simulate tool execution failure
+    import os
+    if os.environ.get("STRIX_TEST_TOOL_FAIL") == "1" and tool_name != "finish_scan":
+        error = RuntimeError(f"[TEST] Simulated tool execution failure for {tool_name}")
+        if tracer and execution_id:
+            tracer.update_tool_execution(execution_id, "error", str(error))
+        raise ToolExecutionError(tool_name, args, error) from error
+
     try:
         result = await execute_tool_invocation(tool_inv, agent_state)
 
@@ -232,7 +252,7 @@ async def _execute_single_tool(
         error_msg = str(e)
         if tracer and execution_id:
             tracer.update_tool_execution(execution_id, "error", error_msg)
-        raise
+        raise ToolExecutionError(tool_name, args, e) from e
 
     observation_xml, images = _format_tool_result(tool_name, result)
     return observation_xml, images, should_agent_finish

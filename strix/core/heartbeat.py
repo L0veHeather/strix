@@ -50,9 +50,19 @@ class HeartbeatMonitor:
         self._running = True
         logger.debug(f"Heartbeat monitor started (interval={self.interval_seconds}s)")
         
+        # TEST HOOK: simulate async task failure after first heartbeat
+        import os
+        test_fail_counter = 0
+        
         try:
             while not self._stop_flag:
                 await asyncio.sleep(self.interval_seconds)
+                
+                # TEST HOOK: fail on second iteration
+                if os.environ.get("STRIX_TEST_ASYNC_TASK_FAIL") == "1":
+                    test_fail_counter += 1
+                    if test_fail_counter >= 2:
+                        raise RuntimeError("[TEST] Simulated async task failure in heartbeat")
                 
                 if self._stop_flag:
                     break

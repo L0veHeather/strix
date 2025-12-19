@@ -4,7 +4,7 @@ from typing import Any, Optional
 
 import httpx
 
-from strix.agents.base_agent import BaseAgent
+from strix.agents.base_agent import BaseAgent, supervise_task
 from strix.core.scan_controller import ScanController
 from strix.core.scan_phase import ScanPhase, ScanTask
 from strix.llm.config import LLMConfig
@@ -84,11 +84,7 @@ class StrixAgent(BaseAgent):
             logger.info(f"   - Initial Task Queue: {len(self.scan_controller.task_queue)} tasks")
             logger.info(f"   - HTTP Methods to Test: {', '.join(self.scan_controller.http_methods)}")
         except Exception as e:
-            import sys
-            print(f"❌ Failed to initialize ScanController: {e}", file=sys.stderr)
-            logger.error(f"❌ Failed to initialize ScanController: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"❌ Failed to initialize ScanController: {e}")
             raise
         
         if seed is not None:
@@ -157,7 +153,12 @@ class StrixAgent(BaseAgent):
             interval_seconds=5.0,
             scan_start_time=scan_start_time
         )
-        heartbeat_task = asyncio.create_task(heartbeat.run())
+        heartbeat_task = supervise_task(
+            asyncio.create_task(heartbeat.run()),
+            label="heartbeat",
+            tracer=tracer,
+            agent_id=agent_id,
+        )
         logger.info("Heartbeat monitor started (5s intervals)")
         
         try:
@@ -386,12 +387,7 @@ TASK ID: {task.task_id}
             await self._process_llm_response(task, response.content, tracer, active_agent_id)
             
         except Exception as e:
-            import sys
-            import logging
-            print(f"❌ Task execution failed: {e}", file=sys.stderr)
-            logging.error(f"❌ Task execution failed: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception(f"❌ Task execution failed: {e}")
 
             if tracer and self.state.agent_id:
                 tracer.update_agent_status(agent_id=self.state.agent_id, status="llm_failed", error_message=str(e))
@@ -567,7 +563,7 @@ Provide a concise summary of findings."""
             logger.warning(f"No JSON found in LLM response for phase {task.phase.value}")
             if tracer and agent_id:
                 # Log the raw content for debugging if no JSON found
-                tracer.log_chat(
+                tracer.log_chat_message(
                     agent_id=agent_id,
                     role="assistant",
                     content=f"Error: No JSON found in response. Raw output:\n\n{content}"

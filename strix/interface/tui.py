@@ -7,6 +7,54 @@ import signal
 import sys
 import threading
 from collections.abc import Callable
+from contextlib import contextmanager
+from logging.handlers import QueueHandler
+from queue import Empty, SimpleQueue
+import io
+
+
+class _QueueStream(io.TextIOBase):
+    """Lightweight stream that pushes writes into a queue."""
+
+    def __init__(
+        self, queue: SimpleQueue, source: str, forward: io.TextIOBase | None = None
+    ) -> None:
+        super().__init__()
+        self._queue = queue
+        self._source = source
+        self._forward = forward
+
+    def write(self, data: str) -> int:  # type: ignore[override]
+        if not data:
+            return 0
+
+        payload = {"source": self._source, "message": data, "level": "INFO"}
+        self._queue.put(payload)
+
+        if self._forward:
+            self._forward.write(data)
+
+        return len(data)
+
+    def flush(self) -> None:  # type: ignore[override]
+        if self._forward:
+            self._forward.flush()
+
+
+@contextmanager
+def redirect_std_to_queue(queue: SimpleQueue, forward_stream: io.TextIOBase | None = None):
+    """Temporarily route stdout/stderr into a queue (optionally teeing)."""
+
+    old_stdout, old_stderr = sys.stdout, sys.stderr
+    sys.stdout = _QueueStream(queue, "stdout", forward_stream)
+    sys.stderr = _QueueStream(queue, "stderr", forward_stream)
+
+    try:
+        yield
+    finally:
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as pkg_version
 from typing import TYPE_CHECKING, Any, ClassVar, cast
@@ -319,11 +367,15 @@ class StrixTUIApp(App):  # type: ignore[misc]
         Binding("escape", "stop_selected_agent", "Stop Agent", priority=True),
     ]
 
-    def __init__(self, args: argparse.Namespace):
+    def __init__(self, args: argparse.Namespace, log_queue: SimpleQueue | None = None):
         super().__init__()
         self.args = args
         self.scan_config = self._build_scan_config(args)
         self.agent_config = self._build_agent_config(args)
+
+        self._log_queue: SimpleQueue = log_queue or SimpleQueue()
+        self._log_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+        self._loop_failed = False
 
         self.tracer = Tracer(self.scan_config["run_name"])
         self.tracer.set_scan_config(self.scan_config)
@@ -340,6 +392,7 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
         self._agent_dot_states: dict[str, int] = {}  # agent_id -> dot_count (0-3)
         self._dot_animation_timer: Any | None = None
+        self._log_drain_timer: Any | None = None
 
         self._start_dot_animation()
 
@@ -473,6 +526,10 @@ class StrixTUIApp(App):  # type: ignore[misc]
     def on_mount(self) -> None:
         self.title = "strix"
 
+        # Poll external log/stdout queue into tracer for on-screen visibility
+        if self._log_drain_timer is None:
+            self._log_drain_timer = self.set_interval(0.25, self._drain_log_queue)
+
         self.set_timer(4.5, self._hide_splash_screen)
 
     def _hide_splash_screen(self) -> None:
@@ -526,13 +583,17 @@ class StrixTUIApp(App):  # type: ignore[misc]
             status = agent_data.get("status", "running")
 
             status_indicators = {
+                "created": "🆕",
+                "started": "🚀",
                 "running": "🟢",
                 "waiting": "⏸️",
                 "completed": "✅",
+                "finished": "✅",
                 "failed": "❌",
                 "stopped": "⏹️",
                 "stopping": "⏸️",
                 "llm_failed": "🔴",
+                "error": "❌",
             }
 
             status_icon = status_indicators.get(status, "🔵")
@@ -621,6 +682,23 @@ class StrixTUIApp(App):  # type: ignore[misc]
                     content_lines.append(tool_content)
 
         return "\n\n".join(content_lines)
+
+    def _show_global_error_banner(self, message: str) -> None:
+        try:
+            status_display = self.query_one("#agent_status_display", Horizontal)
+            status_text = self.query_one("#status_text", Static)
+            keymap_indicator = self.query_one("#keymap_indicator", Static)
+        except (ValueError, Exception):
+            return
+
+        widgets = [status_display, status_text, keymap_indicator]
+        if not all(self._is_widget_safe(w) for w in widgets):
+            return
+
+        safe_message = escape_markup(message)
+        self._safe_widget_operation(status_text.update, f"[red]{safe_message}[/red]")
+        self._safe_widget_operation(keymap_indicator.update, "[dim]Loop error[/dim]")
+        self._safe_widget_operation(status_display.remove_class, "hidden")
 
 
 
@@ -903,7 +981,7 @@ class StrixTUIApp(App):  # type: ignore[misc]
                 "data": msg,
             }
             for msg in self.tracer.chat_messages
-            if msg.get("agent_id") == agent_id
+            if msg.get("agent_id") in (agent_id, None)
         ]
 
         tool_events = [
@@ -920,6 +998,77 @@ class StrixTUIApp(App):  # type: ignore[misc]
         events = chat_events + tool_events
         events.sort(key=lambda e: (e["timestamp"], e["id"]))
         return events
+
+    def _drain_log_queue(self) -> None:
+        drained = False
+
+        while True:
+            try:
+                item = self._log_queue.get_nowait()
+            except Empty:
+                break
+
+            drained = True
+
+            try:
+                if isinstance(item, logging.LogRecord):
+                    message = self._log_formatter.format(item)
+                    level = item.levelname
+                    self._push_log_to_tracer(message, level)
+                elif isinstance(item, dict):
+                    raw_msg = str(item.get("message", ""))
+                    level = str(item.get("level", "INFO"))
+                    source = str(item.get("source", "stdout"))
+
+                    if not raw_msg:
+                        continue
+
+                    for line in raw_msg.splitlines():
+                        if line.strip():
+                            self._push_log_to_tracer(f"[{source}] {line}", level)
+                else:
+                    for line in str(item).splitlines():
+                        if line.strip():
+                            self._push_log_to_tracer(line, "INFO")
+            except Exception:
+                logging.exception("Failed to process log queue item")
+
+        if drained:
+            self._displayed_events.clear()
+            self.call_later(self._update_chat_view)
+
+    def _push_log_to_tracer(self, message: str, level: str = "INFO") -> None:
+        if not message:
+            return
+
+        try:
+            self.tracer.log_chat_message(
+                content=message,
+                role="system",
+                agent_id=None,
+                metadata={"type": "log", "level": level},
+            )
+        except Exception:
+            logging.exception("Failed to push log message to tracer")
+
+    def report_loop_exception(self, summary: str) -> None:
+        if self._loop_failed:
+            return
+
+        self._loop_failed = True
+        logging.exception("Unhandled asyncio exception: %s", summary)
+
+        try:
+            self.tracer.log_chat_message(
+                content=summary,
+                role="system",
+                agent_id=None,
+                metadata={"type": "loop_error"},
+            )
+        except Exception:
+            logging.exception("Failed to log loop exception to tracer")
+
+        self._show_global_error_banner(summary)
 
     def watch_selected_agent_id(self, _agent_id: str | None) -> None:
         if len(self.screen_stack) > 1 or self.show_splash:
@@ -983,12 +1132,17 @@ class StrixTUIApp(App):  # type: ignore[misc]
         agent_name_raw = agent_data.get("name", "Agent")
 
         status_indicators = {
+            "created": "🆕",
+            "started": "🚀",
             "running": "🟢",
             "waiting": "🟡",
             "completed": "✅",
+            "finished": "✅",
             "failed": "❌",
             "stopped": "⏹️",
             "stopping": "⏸️",
+            "llm_failed": "🔴",
+            "error": "❌",
         }
 
         status_icon = status_indicators.get(status, "🔵")
@@ -1050,12 +1204,17 @@ class StrixTUIApp(App):  # type: ignore[misc]
         status = agent_data.get("status", "running")
 
         status_indicators = {
+            "created": "🆕",
+            "started": "🚀",
             "running": "🟢",
             "waiting": "🟡",
             "completed": "✅",
+            "finished": "✅",
             "failed": "❌",
             "stopped": "⏹️",
             "stopping": "⏸️",
+            "llm_failed": "🔴",
+            "error": "❌",
         }
 
         status_icon = status_indicators.get(status, "🔵")
@@ -1452,5 +1611,43 @@ class StrixTUIApp(App):  # type: ignore[misc]
 
 async def run_tui(args: argparse.Namespace) -> None:
     """Run strix in interactive TUI mode with textual."""
-    app = StrixTUIApp(args)
-    await app.run_async()
+    log_queue: SimpleQueue = SimpleQueue()
+
+    queue_handler = QueueHandler(log_queue)
+    queue_handler.setLevel(logging.INFO)
+    queue_handler.setFormatter(
+        logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
+    )
+
+    # Force root logging to only use the queue handler (no stdout/stderr handler)
+    logging.basicConfig(level=logging.INFO, handlers=[queue_handler], force=True)
+
+    app = StrixTUIApp(args, log_queue=log_queue)
+
+    loop = asyncio.get_running_loop()
+
+    def _loop_exception_handler(_loop: asyncio.AbstractEventLoop, context: dict[str, Any]) -> None:
+        exc = context.get("exception")
+        msg = context.get("message") or "Unhandled asyncio exception"
+
+        if exc:
+            summary = f"Asyncio error: {exc!r}"
+        else:
+            summary = f"Asyncio error: {msg}"
+
+        app.report_loop_exception(summary)
+
+        if getattr(args, "fail_fast", False):
+            try:
+                app.exit()
+            except Exception:
+                logging.exception("Failed to exit app after loop exception")
+
+    loop.set_exception_handler(_loop_exception_handler)
+
+    # Prevent stray stdout/stderr writes from breaking the TUI; feed them into the log queue instead
+    with redirect_std_to_queue(log_queue, forward_stream=None):
+        await app.run_async()
+
+    if getattr(args, "fail_fast", False) and app._loop_failed:
+        sys.exit(1)

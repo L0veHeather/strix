@@ -5,6 +5,46 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 
+def supervise_task(
+    task: asyncio.Task[Any],
+    label: str,
+    tracer: Optional["Tracer"] = None,
+    agent_id: Optional[str] = None,
+) -> asyncio.Task[Any]:
+    """Attach a done-callback to surface exceptions to tracer/UI."""
+
+    def _on_done(done: asyncio.Task[Any]) -> None:
+        try:
+            exc = done.exception()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logging.exception("Failed to inspect task %s", label)
+            return
+
+        if not exc:
+            return
+
+        summary = f"{label} failed: {exc!r}"
+        logging.exception(summary)
+
+        if tracer:
+            try:
+                tracer.log_chat_message(
+                    content=summary,
+                    role="system",
+                    agent_id=agent_id,
+                    metadata={"type": "task_error", "label": label},
+                )
+                if agent_id:
+                    tracer.update_agent_status(agent_id, "error", summary)
+            except Exception:  # noqa: BLE001
+                logging.exception("Failed to report task error for %s", label)
+
+    task.add_done_callback(_on_done)
+    return task
+
+
 if TYPE_CHECKING:
     from strix.telemetry.tracer import Tracer
 
@@ -20,6 +60,7 @@ from strix.llm import LLM, LLMRequestFailedError
 from strix.llm.config import LLMConfig
 from strix.llm.utils import clean_content
 from strix.tools import process_tool_invocations
+from strix.tools.executor import ToolExecutionError
 
 from .state import AgentState
 
@@ -61,62 +102,90 @@ class BaseAgent(metaclass=AgentMeta):
 
     def __init__(self, config: dict[str, Any]):
         self.config = config
+        self.unhealthy = False
+        self.state: AgentState | None = None
 
-        self.local_sources = config.get("local_sources", [])
-        self.non_interactive = config.get("non_interactive", False)
+        try:
+            self.local_sources = config.get("local_sources", [])
+            self.non_interactive = config.get("non_interactive", False)
 
-        if "max_iterations" in config:
-            self.max_iterations = config["max_iterations"]
+            if "max_iterations" in config:
+                self.max_iterations = config["max_iterations"]
 
-        self.llm_config_name = config.get("llm_config_name", "default")
-        self.llm_config = config.get("llm_config", self.default_llm_config)
-        if self.llm_config is None:
-            raise ValueError("llm_config is required but not provided")
-        self.llm = LLM(self.llm_config, agent_name=self.agent_name)
+            self.llm_config_name = config.get("llm_config_name", "default")
+            self.llm_config = config.get("llm_config", self.default_llm_config)
+            if self.llm_config is None:
+                raise ValueError("llm_config is required but not provided")
+            
+            # TEST HOOK: simulate agent init failure
+            if os.environ.get("STRIX_TEST_AGENT_INIT_FAIL") == "1":
+                raise RuntimeError("[TEST] Simulated agent initialization failure")
+            
+            self.llm = LLM(self.llm_config, agent_name=self.agent_name)
 
-        state_from_config = config.get("state")
-        if state_from_config is not None:
-            self.state = state_from_config
-        else:
-            self.state = AgentState(
-                agent_name=self.agent_name,
-                max_iterations=self.max_iterations,
-            )
-
-        with contextlib.suppress(Exception):
-            self.llm.set_agent_identity(self.agent_name, self.state.agent_id)
-        self._current_task: asyncio.Task[Any] | None = None
-
-        from strix.telemetry.tracer import get_global_tracer
-
-        tracer = get_global_tracer()
-        if tracer:
-            tracer.log_agent_creation(
-                agent_id=self.state.agent_id,
-                name=self.state.agent_name,
-                task=self.state.task,
-                parent_id=self.state.parent_id,
-            )
-            if self.state.parent_id is None:
-                scan_config = tracer.scan_config or {}
-                exec_id = tracer.log_tool_execution_start(
-                    agent_id=self.state.agent_id,
-                    tool_name="scan_start_info",
-                    args=scan_config,
-                )
-                tracer.update_tool_execution(execution_id=exec_id, status="completed", result={})
-
+            state_from_config = config.get("state")
+            if state_from_config is not None:
+                self.state = state_from_config
             else:
-                exec_id = tracer.log_tool_execution_start(
-                    agent_id=self.state.agent_id,
-                    tool_name="subagent_start_info",
-                    args={
-                        "name": self.state.agent_name,
-                        "task": self.state.task,
-                        "parent_id": self.state.parent_id,
-                    },
+                self.state = AgentState(
+                    agent_name=self.agent_name,
+                    max_iterations=self.max_iterations,
                 )
-                tracer.update_tool_execution(execution_id=exec_id, status="completed", result={})
+
+            with contextlib.suppress(Exception):
+                self.llm.set_agent_identity(self.agent_name, self.state.agent_id)
+            self._current_task: asyncio.Task[Any] | None = None
+
+            from strix.telemetry.tracer import get_global_tracer
+
+            tracer = get_global_tracer()
+            if tracer:
+                tracer.log_agent_creation(
+                    agent_id=self.state.agent_id,
+                    name=self.state.agent_name,
+                    task=self.state.task,
+                    parent_id=self.state.parent_id,
+                )
+                # Lifecycle: CREATED
+                tracer.update_agent_status(self.state.agent_id, "created")
+                if self.state.parent_id is None:
+                    scan_config = tracer.scan_config or {}
+                    exec_id = tracer.log_tool_execution_start(
+                        agent_id=self.state.agent_id,
+                        tool_name="scan_start_info",
+                        args=scan_config,
+                    )
+                    tracer.update_tool_execution(execution_id=exec_id, status="completed", result={})
+
+                else:
+                    exec_id = tracer.log_tool_execution_start(
+                        agent_id=self.state.agent_id,
+                        tool_name="subagent_start_info",
+                        args={
+                            "name": self.state.agent_name,
+                            "task": self.state.task,
+                            "parent_id": self.state.parent_id,
+                        },
+                    )
+                    tracer.update_tool_execution(execution_id=exec_id, status="completed", result={})
+
+        except Exception as exc:  # noqa: BLE001
+            self.unhealthy = True
+            agent_id = getattr(self.state, "agent_id", "unknown_agent")
+            logger.exception("Agent initialization failed: %s", exc)
+            with contextlib.suppress(Exception):
+                from strix.telemetry.tracer import get_global_tracer
+
+                tracer = get_global_tracer()
+                if tracer:
+                    tracer.log_chat_message(
+                        content=f"Agent init failed: {exc!r}",
+                        role="system",
+                        agent_id=agent_id,
+                        metadata={"type": "agent_init_error"},
+                    )
+                    tracer.update_agent_status(agent_id, "error", str(exc))
+            raise
 
         self._add_to_agents_graph()
 
@@ -163,6 +232,10 @@ class BaseAgent(metaclass=AgentMeta):
         from strix.telemetry.tracer import get_global_tracer
 
         tracer = get_global_tracer()
+
+        # Lifecycle: STARTED
+        if tracer:
+            tracer.update_agent_status(self.state.agent_id, "started")
 
         while True:
             self._check_agent_messages(self.state)
@@ -266,9 +339,9 @@ class BaseAgent(metaclass=AgentMeta):
                     if self.non_interactive:
                         self.state.set_completed({"success": False, "error": str(e)})
                         if tracer:
-                            tracer.update_agent_status(self.state.agent_id, "failed")
+                            tracer.update_agent_status(self.state.agent_id, "failed", str(e))
                         raise
-                    await self._enter_waiting_state(tracer, error_occurred=True)
+                    await self._enter_waiting_state(tracer, error_occurred=True, error_msg=str(e))
                     continue
 
     async def _wait_for_input(self) -> None:
@@ -302,18 +375,23 @@ class BaseAgent(metaclass=AgentMeta):
         task_completed: bool = False,
         error_occurred: bool = False,
         was_cancelled: bool = False,
+        error_msg: str | None = None,
     ) -> None:
         self.state.enter_waiting_state()
 
         if tracer:
             if task_completed:
-                tracer.update_agent_status(self.state.agent_id, "completed")
+                # Lifecycle: FINISHED
+                tracer.update_agent_status(self.state.agent_id, "finished")
             elif error_occurred:
-                tracer.update_agent_status(self.state.agent_id, "error")
+                # Lifecycle: FAILED
+                tracer.update_agent_status(self.state.agent_id, "failed", error_msg)
             elif was_cancelled:
+                # Lifecycle: STOPPED
                 tracer.update_agent_status(self.state.agent_id, "stopped")
             else:
-                tracer.update_agent_status(self.state.agent_id, "stopped")
+                # Lifecycle: WAITING
+                tracer.update_agent_status(self.state.agent_id, "waiting")
 
         if task_completed:
             self.state.add_message(
@@ -442,14 +520,33 @@ class BaseAgent(metaclass=AgentMeta):
 
         conversation_history = self.state.get_conversation_history()
 
-        tool_task = asyncio.create_task(
-            process_tool_invocations(actions, conversation_history, self.state)
+        tool_task = supervise_task(
+            asyncio.create_task(
+                process_tool_invocations(actions, conversation_history, self.state)
+            ),
+            label="tool_invocations",
+            tracer=tracer,
+            agent_id=self.state.agent_id,
         )
         self._current_task = tool_task
 
         try:
             should_agent_finish = await tool_task
             self._current_task = None
+        except ToolExecutionError as exc:
+            self._current_task = None
+            error_msg = f"Tool '{exc.tool_name}' failed"
+            self.state.add_error(error_msg)
+            if tracer:
+                tracer.log_chat_message(
+                    content=f"{error_msg}: {exc.original!r}",
+                    role="system",
+                    agent_id=self.state.agent_id,
+                    metadata={"type": "tool_error", "tool": exc.tool_name, "args": exc.tool_args},
+                )
+                tracer.update_agent_status(self.state.agent_id, "error", error_msg)
+            self.unhealthy = True
+            return True
         except asyncio.CancelledError:
             self._current_task = None
             self.state.add_error("Tool execution cancelled by user")
@@ -476,7 +573,7 @@ class BaseAgent(metaclass=AgentMeta):
         logger.exception(error_msg)
         self.state.add_error(error_msg)
         if tracer:
-            tracer.update_agent_status(self.state.agent_id, "error")
+            tracer.update_agent_status(self.state.agent_id, "error", error_msg)
         return True
 
     def _check_agent_messages(self, state: AgentState) -> None:  # noqa: PLR0912
