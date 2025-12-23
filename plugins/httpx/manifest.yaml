@@ -1,0 +1,130 @@
+name: httpx
+version: "1.3"
+description: Fast and multi-purpose HTTP toolkit for web reconnaissance
+author: ProjectDiscovery
+homepage: https://github.com/projectdiscovery/httpx
+license: MIT
+
+phases:
+  - RECONNAISSANCE
+
+capabilities:
+  - WEB_PROBE
+  - TECHNOLOGY_DETECTION
+  - SERVICE_ENUMERATION
+
+install:
+  method: go
+  package: github.com/projectdiscovery/httpx/cmd/httpx@latest
+  verify_command: httpx -version
+
+executable:
+  name: httpx
+  paths:
+    - httpx
+    - ~/go/bin/httpx
+    - /usr/local/bin/httpx
+
+parameters:
+  - name: target
+    type: string
+    required: true
+    description: Target URL or file with URLs
+    cli_flag: -u
+
+  - name: target_list
+    type: string
+    required: false
+    description: File containing list of URLs
+    cli_flag: -l
+
+  - name: threads
+    type: integer
+    required: false
+    description: Number of threads
+    cli_flag: -threads
+    default: 50
+
+  - name: timeout
+    type: integer
+    required: false
+    description: Request timeout in seconds
+    cli_flag: -timeout
+    default: 15
+
+  - name: retries
+    type: integer
+    required: false
+    description: Number of retries
+    cli_flag: -retries
+    default: 2
+
+  - name: follow_redirects
+    type: boolean
+    required: false
+    description: Follow HTTP redirects
+    cli_flag: -follow-redirects
+    default: true
+
+  - name: tech_detect
+    type: boolean
+    required: false
+    description: Detect web technologies
+    cli_flag: -tech-detect
+    default: true
+
+  - name: status_code
+    type: boolean
+    required: false
+    description: Display response status code
+    cli_flag: -status-code
+    default: true
+
+  - name: content_length
+    type: boolean
+    required: false
+    description: Display response content length
+    cli_flag: -content-length
+    default: true
+
+  - name: title
+    type: boolean
+    required: false
+    description: Display page title
+    cli_flag: -title
+    default: true
+
+  - name: web_server
+    type: boolean
+    required: false
+    description: Display web server name
+    cli_flag: -web-server
+    default: true
+
+  - name: probe
+    type: boolean
+    required: false
+    description: Display probe status
+    cli_flag: -probe
+    default: false
+
+output:
+  format: jsonl
+  fields:
+    - name: url
+      maps_to: url
+    - name: status_code
+      maps_to: status_code
+    - name: title
+      maps_to: title
+    - name: webserver
+      maps_to: web_server
+    - name: technologies
+      maps_to: technologies
+    - name: content_length
+      maps_to: content_length
+    - name: host
+      maps_to: host
+
+timeout_seconds: 300
+rate_limit_per_minute: 1000

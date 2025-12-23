@@ -1,0 +1,151 @@
+name: sqlmap
+version: "1.7"
+description: Automatic SQL injection and database takeover tool
+author: sqlmapproject
+homepage: https://github.com/sqlmapproject/sqlmap
+license: GPLv2
+
+phases:
+  - EXPLOITATION
+  - VULNERABILITY_SCAN
+
+capabilities:
+  - SQL_INJECTION
+  - DATABASE_EXPLOITATION
+  - VULNERABILITY_DETECTION
+
+install:
+  method: pipx
+  package: sqlmap
+  verify_command: sqlmap --version
+
+executable:
+  name: sqlmap
+  paths:
+    - sqlmap
+    - ~/.local/bin/sqlmap
+    - /usr/local/bin/sqlmap
+    - /usr/bin/sqlmap
+
+parameters:
+  - name: url
+    type: string
+    required: true
+    description: Target URL with parameter(s)
+    cli_flag: -u
+
+  - name: request_file
+    type: string
+    required: false
+    description: Load HTTP request from file
+    cli_flag: -r
+
+  - name: data
+    type: string
+    required: false
+    description: POST data string
+    cli_flag: --data
+
+  - name: cookie
+    type: string
+    required: false
+    description: HTTP Cookie header
+    cli_flag: --cookie
+
+  - name: level
+    type: integer
+    required: false
+    description: Level of tests (1-5)
+    cli_flag: --level
+    default: 1
+
+  - name: risk
+    type: integer
+    required: false
+    description: Risk of tests (1-3)
+    cli_flag: --risk
+    default: 1
+
+  - name: threads
+    type: integer
+    required: false
+    description: Number of concurrent threads
+    cli_flag: --threads
+    default: 1
+
+  - name: timeout
+    type: integer
+    required: false
+    description: Timeout in seconds
+    cli_flag: --timeout
+    default: 30
+
+  - name: retries
+    type: integer
+    required: false
+    description: Retries on connection errors
+    cli_flag: --retries
+    default: 3
+
+  - name: dbms
+    type: string
+    required: false
+    description: Force specific DBMS
+    cli_flag: --dbms
+
+  - name: technique
+    type: string
+    required: false
+    description: SQL injection techniques (BEUSTQ)
+    cli_flag: --technique
+    default: BEUSTQ
+
+  - name: tamper
+    type: string
+    required: false
+    description: Tamper scripts to use
+    cli_flag: --tamper
+
+  - name: random_agent
+    type: boolean
+    required: false
+    description: Use random User-Agent
+    cli_flag: --random-agent
+    default: true
+
+  - name: forms
+    type: boolean
+    required: false
+    description: Parse and test forms
+    cli_flag: --forms
+    default: false
+
+  - name: crawl
+    type: integer
+    required: false
+    description: Crawl depth
+    cli_flag: --crawl
+    default: 0
+
+  - name: batch
+    type: boolean
+    required: false
+    description: Non-interactive mode
+    cli_flag: --batch
+    default: true
+    internal: true
+
+output:
+  format: text
+  patterns:
+    - pattern: "Parameter: (.+)"
+      maps_to: parameter
+    - pattern: "Type: (.+)"
+      maps_to: injection_type
+    - pattern: "Payload: (.+)"
+      maps_to: payload
+    - pattern: "back-end DBMS: (.+)"
+      maps_to: dbms
+
+timeout_seconds: 3600
+rate_limit_per_minute: 60

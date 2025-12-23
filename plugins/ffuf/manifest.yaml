@@ -1,0 +1,164 @@
+name: ffuf
+version: "2.1"
+description: Fast web fuzzer for content discovery and endpoint enumeration
+author: joohoi
+homepage: https://github.com/ffuf/ffuf
+license: MIT
+
+phases:
+  - ENUMERATION
+
+capabilities:
+  - CONTENT_DISCOVERY
+  - FUZZING
+  - ENDPOINT_ENUMERATION
+
+install:
+  method: go
+  package: github.com/ffuf/ffuf/v2@latest
+  verify_command: ffuf -V
+
+executable:
+  name: ffuf
+  paths:
+    - ffuf
+    - ~/go/bin/ffuf
+    - /usr/local/bin/ffuf
+
+parameters:
+  - name: url
+    type: string
+    required: true
+    description: Target URL with FUZZ placeholder
+    cli_flag: -u
+
+  - name: wordlist
+    type: string
+    required: true
+    description: Wordlist file path
+    cli_flag: -w
+    default: /usr/share/wordlists/dirb/common.txt
+
+  - name: method
+    type: string
+    required: false
+    description: HTTP method
+    cli_flag: -X
+    default: GET
+
+  - name: threads
+    type: integer
+    required: false
+    description: Number of threads
+    cli_flag: -t
+    default: 40
+
+  - name: rate
+    type: integer
+    required: false
+    description: Rate limit (requests per second)
+    cli_flag: -rate
+    default: 0
+
+  - name: timeout
+    type: integer
+    required: false
+    description: Request timeout in seconds
+    cli_flag: -timeout
+    default: 10
+
+  - name: filter_code
+    type: string
+    required: false
+    description: Filter by HTTP status code
+    cli_flag: -fc
+    default: "404"
+
+  - name: match_code
+    type: string
+    required: false
+    description: Match by HTTP status code
+    cli_flag: -mc
+    default: ""
+
+  - name: filter_size
+    type: string
+    required: false
+    description: Filter by response size
+    cli_flag: -fs
+
+  - name: filter_words
+    type: string
+    required: false
+    description: Filter by word count
+    cli_flag: -fw
+
+  - name: filter_lines
+    type: string
+    required: false
+    description: Filter by line count
+    cli_flag: -fl
+
+  - name: extensions
+    type: string
+    required: false
+    description: File extensions to test
+    cli_flag: -e
+    default: ""
+
+  - name: follow_redirects
+    type: boolean
+    required: false
+    description: Follow redirects
+    cli_flag: -r
+    default: false
+
+  - name: headers
+    type: string
+    required: false
+    description: Custom headers (format: "Header: value")
+    cli_flag: -H
+    multiple: true
+
+  - name: data
+    type: string
+    required: false
+    description: POST data
+    cli_flag: -d
+
+  - name: recursion
+    type: boolean
+    required: false
+    description: Enable recursive scanning
+    cli_flag: -recursion
+    default: false
+
+  - name: recursion_depth
+    type: integer
+    required: false
+    description: Maximum recursion depth
+    cli_flag: -recursion-depth
+    default: 2
+
+output:
+  format: json
+  fields:
+    - name: input.FUZZ
+      maps_to: fuzz_value
+    - name: url
+      maps_to: url
+    - name: status
+      maps_to: status_code
+    - name: length
+      maps_to: content_length
+    - name: words
+      maps_to: words
+    - name: lines
+      maps_to: lines
+    - name: content-type
+      maps_to: content_type
+    - name: redirectlocation
+      maps_to: redirect_location
+
+timeout_seconds: 1800
+rate_limit_per_minute: 2400

@@ -1,0 +1,143 @@
+name: nuclei
+version: "3.0"
+description: Fast and customizable vulnerability scanner based on simple YAML templates
+author: ProjectDiscovery
+homepage: https://github.com/projectdiscovery/nuclei
+license: MIT
+
+# Scan phases this plugin participates in
+phases:
+  - VULNERABILITY_SCAN
+  - VALIDATION
+
+# Plugin capabilities
+capabilities:
+  - VULNERABILITY_DETECTION
+  - CVE_SCANNING
+  - TEMPLATE_BASED
+
+# Installation
+install:
+  method: go
+  package: github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+  verify_command: nuclei -version
+
+# Executable configuration
+executable:
+  name: nuclei
+  # Will search in PATH and common locations
+  paths:
+    - nuclei
+    - ~/go/bin/nuclei
+    - /usr/local/bin/nuclei
+
+# Parameters
+parameters:
+  - name: target
+    type: string
+    required: true
+    description: Target URL to scan
+    cli_flag: -u
+
+  - name: templates
+    type: string
+    required: false
+    description: Custom template or directory path
+    cli_flag: -t
+
+  - name: tags
+    type: string
+    required: false
+    description: Execute templates with specific tags
+    cli_flag: -tags
+    default: cve,sqli,xss,rce,lfi,ssrf
+
+  - name: severity
+    type: string
+    required: false
+    description: Severity levels to scan for
+    cli_flag: -severity
+    default: critical,high,medium
+
+  - name: rate_limit
+    type: integer
+    required: false
+    description: Maximum requests per second
+    cli_flag: -rate-limit
+    default: 150
+
+  - name: concurrency
+    type: integer
+    required: false
+    description: Maximum concurrent templates
+    cli_flag: -concurrency
+    default: 25
+
+  - name: timeout
+    type: integer
+    required: false
+    description: Request timeout in seconds
+    cli_flag: -timeout
+    default: 10
+
+  - name: retries
+    type: integer
+    required: false
+    description: Number of retries
+    cli_flag: -retries
+    default: 2
+
+  - name: output_format
+    type: string
+    required: false
+    description: Output format
+    cli_flag: -jsonl
+    default: ""
+    internal: true
+
+  - name: silent
+    type: boolean
+    required: false
+    description: Silent mode
+    cli_flag: -silent
+    default: true
+    internal: true
+
+  - name: no_color
+    type: boolean
+    required: false
+    description: Disable color output
+    cli_flag: -no-color
+    default: true
+    internal: true
+
+# Output parsing
+output:
+  format: jsonl
+  fields:
+    - name: template-id
+      maps_to: template_id
+    - name: info.name
+      maps_to: title
+    - name: info.severity
+      maps_to: severity
+    - name: info.description
+      maps_to: description
+    - name: matched-at
+      maps_to: url
+    - name: matcher-name
+      maps_to: matcher_name
+    - name: extracted-results
+      maps_to: extracted
+    - name: curl-command
+      maps_to: curl_command
+    - name: info.classification.cve-id
+      maps_to: cve_id
+    - name: info.classification.cwe-id
+      maps_to: cwe_id
+
+# Default timeout
+timeout_seconds: 600
+
+# Rate limiting
+rate_limit_per_minute: 500
