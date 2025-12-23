@@ -1,390 +1,331 @@
-# 🦉 Strix: Autonomous AI Security Agent
+# 🦉 Strix v2: Human-Controlled Security Scanner
 
-[English](README.md) | [中文](README_ZH.md)
+[English](README.md) | [中文](README_ZH.md) | [**📖 v2 设计哲学**](docs/strix-v2-philosophy.md)
 
-**Strix** is an advanced, open-source autonomous AI agent designed to perform comprehensive security assessments and penetration testing. Acting like a team of skilled ethical hackers, Strix dynamically analyzes your applications, identifies vulnerabilities, and validates them with real proof-of-concept (PoC) exploits.
+> ⚠️ **Architecture Change**: Strix v2 has been fundamentally redesigned.
+> - ❌ **Removed**: Agent loops, Docker/Sandbox, LLM-controlled flow, CLI/TUI
+> - ✅ **Added**: Server + Engine + Plugin architecture with human control
 
-Unlike traditional scanners that rely on static rules, Strix uses Large Language Models (LLMs) to understand the context of your application, plan complex attack vectors, and adapt its strategy in real-time.
+**Strix v2** is an open-source, plugin-based security scanning system. Unlike v1's autonomous agent approach, v2 puts **humans in control** while leveraging security tools for comprehensive vulnerability detection.
 
----
+## 🚀 Quick Start
 
-## ✨ Key Capabilities
+```bash
+# Clone repository
+git clone https://github.com/your-org/strix.git
+cd strix
 
-### 🛡️ Advanced Vulnerability Detection
-Strix goes beyond simple signature matching, using AI to understand logic and context:
-- **OWASP API Top 10**: Comprehensive coverage including BOLA, Mass Assignment, and Broken Authentication using **Akto's** proven library.
-- **IDOR & Access Control**: Advanced detection of Insecure Direct Object References with multi-account testing.
-- **Parameter Fuzzing**: Integrated **Arjun** for discovering hidden parameters and legacy endpoints.
-- **Header Manipulation**: Automated **Whitepass-inspired** header bypass techniques (IP spoofing, auth bypass).
-- **Client-Side Attacks**: Detection of XSS (Reflected/Stored), Open Redirects, and CSRF.
-- **Server-Side Flaws**: SSRF, RCE, and SQL Injection testing.
+# One-click launch (backend + web UI)
+./start.sh
 
-### 🔮 Omniscient Testing (Crystal-Box)
-Strix transcends traditional scanning by leveraging full deployment context:
-- **Infrastructure Awareness**: Analyzes `Dockerfile`, `docker-compose.yml`, and `.env` to map internal networks and services.
-- **Deep Logic Assessment**: Correlates infrastructure findings with code analysis and dynamic testing.
-- **Full-Chain Exploitation**: Chains vulnerabilities across layers (e.g., using an SSRF in code to access an internal Redis service discovered in docker-compose).
-- **IAST-like Container Analysis**: With `--deploy`, Strix auto-starts your target and reads container logs to observe runtime behavior during attacks.
+# Or run server directly
+uvicorn strix.server.app:app --host 0.0.0.0 --port 8000
 
-### 🧠 Agentic Intelligence
-- **Adaptive Planning**: Calculates a **Target Complexity Index (TCI)** to tailor the scan strategy (e.g., "Quick Scan" vs. "Deep Dive").
-- **Multi-Agent Orchestration**: Specialized agents collaborate:
-    - **Orchestrator**: Manages the overall mission.
-    - **JSRouteAnalyzer**: Deep analysis of JavaScript files using **urlfinder** and AI.
-    - **Validation Agent**: Verifies findings with reproducible PoCs to ensure **Zero False Positives**.
-- **Deep Thinking**: Leverages "thinking" models to analyze complex logic flaws and edge cases.
+# Frontend (separate terminal)
+cd desktop && pnpm dev
+```
 
-### � Powerful Interface
-###  Powerful Interface
-- **Real-time TUI**: Interactive terminal UI with a **Live Stats Panel** showing agent status, token usage, costs, and vulnerability severity breakdown.
-- **Full HTTP Proxy**: Intercepts and manipulates traffic for deep inspection.
-- **Browser Automation**: Headless browser for testing modern SPAs and authentication flows.
+**Access:**
+- 🌐 Web UI: http://localhost:5173
+- 📡 API: http://localhost:8000
+- 📖 API Docs: http://localhost:8000/docs
 
 ---
 
-## 🔄 How Strix Works (Deterministic Phase-Driven Workflow)
+## 🏗️ Architecture
 
-Strix follows a **code-controlled**, **phase-based** methodology ensuring complete coverage:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     Desktop UI (React + Tauri)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                     FastAPI Server (REST + WS)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                         Scan Engine                             │
+│    ┌──────────────┬──────────────┬──────────────────────┐      │
+│    │  Event Bus   │Phase Manager │ Result Collector     │      │
+│    └──────────────┴──────────────┴──────────────────────┘      │
+├─────────────────────────────────────────────────────────────────┤
+│                      Plugin Registry                            │
+│    ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐     │
+│    │ Nuclei │ │ HTTPX  │ │  ffuf  │ │ Katana │ │ SQLMap │     │
+│    └────────┘ └────────┘ └────────┘ └────────┘ └────────┘     │
+├─────────────────────────────────────────────────────────────────┤
+│                      SQLite Storage                             │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-1.  **👀 ENUMERATION Phase**
-    *   Discovers URLs, endpoints, and parameters from the target
-    *   LLM analyzes HTTP responses to extract links and form fields
-    *   **Code** manages task queue and prevents duplicates
-    *   **Transition**: When no new URLs discovered
+### Key Components
 
-2.  **🔍 PARAM_EXPANSION Phase**
-    *   LLM suggests hidden parameters (API keys, debug modes, admin flags)
-    *   **Code** creates test tasks for each parameter on all known URLs
-    *   Uses AI reasoning to predict parameter names
-    *   **Transition**: When all parameter tests queued
+| Component | Description |
+|-----------|-------------|
+| **Server** | FastAPI backend with REST API and WebSocket for real-time updates |
+| **Engine** | ScanEngine orchestrates phases, EventBus distributes events |
+| **Plugins** | Security tools (Nuclei, httpx, ffuf, katana, sqlmap) |
+| **Storage** | SQLite database for scans, findings, and configurations |
+| **Desktop** | Tauri + React frontend for visual scan management |
 
-3.  **⚡ VULNERABILITY_TEST Phase**
-    *   Tests for OWASP Top 10, API security issues, logic flaws
-    *   LLM detects vulnerability *indicators* (not confirmations)
-    *   **NEW**: Automatic HTTP method enumeration (GET/POST/PUT/DELETE/PATCH/OPTIONS/HEAD)
-    *   Suspected vulnerabilities → queued for verification
-    *   **Transition**: When all vuln tests complete
+---
 
-4.  **✅ LLM_VERIFICATION Phase (Zero False Positives)**
-    *   **LLM Role**: Generate PoC strategies (payloads, expected indicators)
-    *   **Code Role**: Execute PoCs, validate with pattern matching
-    *   Type-specific validators: XSS, SQLi, SSRF, XXE, RCE, IDOR
-    *   **Only code-confirmed** vulnerabilities are reported
-    *   **Transition**: When all PoCs validated
+## 🛡️ Plugin-Based Vulnerability Detection
 
-5.  **🔗 DEEP_ANALYSIS Phase**
-    *   Identifies vulnerability chains and exploit paths
-    *   Plans multi-step attacks (e.g., SSRF → internal Redis access)
-    *   **Transition**: Analysis complete
+Strix v2 uses proven security tools as plugins:
 
-6.  **📊 SUMMARY Phase**
-    *   Final report generation
-    *   Comprehensive findings with reproduction steps
-    *   **Scan Complete**: Code determines completion, not LLM
+| Plugin | Phase | Description |
+|--------|-------|-------------|
+| **nuclei** | Vulnerability Scan | Template-based vulnerability scanning (10,000+ templates) |
+| **httpx** | Reconnaissance | HTTP probing, technology detection |
+| **ffuf** | Enumeration | Directory brute-forcing, parameter fuzzing |
+| **katana** | Reconnaissance | Web crawling, endpoint discovery |
+| **sqlmap** | Exploitation | SQL injection detection and exploitation |
 
-**Key Guarantee**: Finding vulnerabilities does NOT stop the scan. All phases complete regardless of findings.
+---
+
+## 🔄 How Strix v2 Works
+
+Strix v2 follows a **deterministic, code-controlled** workflow:
+
+```
+RECONNAISSANCE → ENUMERATION → VULNERABILITY_SCAN → VALIDATION → REPORTING
+```
+
+| Phase | Plugins | Output |
+|-------|---------|--------|
+| **Reconnaissance** | httpx, katana | Discovered endpoints, technologies |
+| **Enumeration** | ffuf | Hidden paths, parameters |
+| **Vulnerability Scan** | nuclei, sqlmap | Detected vulnerabilities |
+| **Validation** | nuclei | Verified findings |
+| **Reporting** | - | JSON, Markdown, SARIF reports |
+
+### Key Principles
+
+1. **Code controls flow** - Phase transitions are deterministic, not LLM-decided
+2. **Plugins execute** - Security tools run natively, no Docker/sandbox
+3. **Humans review** - All results require human analysis
 
 ---
 
 ## 🚀 Installation
 
 ### Prerequisites
-1.  **Docker**: Strix runs its sandbox environment in Docker.
-2.  **Python 3.12+**: Required for the CLI.
-3.  **LLM API Key**: Access to a powerful LLM (e.g., OpenAI GPT-4o, Claude 3.5 Sonnet).
 
-### Install via pipx (Recommended)
+1. **Python 3.12+**: Required for the backend
+2. **Node.js 18+**: Required for the desktop UI
+3. **Security Tools**: Required for scanning
+
+### Install Security Tools
+
 ```bash
-pipx install .
+# Go tools (requires Go 1.21+)
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/ffuf/ffuf/v2@latest
+go install github.com/projectdiscovery/katana/cmd/katana@latest
+
+# Python tools
+pipx install sqlmap
+
+# Verify installation
+nuclei -version
+httpx -version
+ffuf -version
+katana -version
+sqlmap --version
 ```
 
-### Install via pip
+### Install Strix
+
 ```bash
-pip install .
+# Clone repository
+git clone https://github.com/your-org/strix.git
+cd strix
+
+# Backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e .
+
+# Frontend
+cd desktop
+pnpm install
 ```
 
 ---
 
 ## ⚙️ Configuration
 
-Set your environment variables:
+### Optional: LLM for Analysis (Future Feature)
 
 ```bash
-# Required: LLM Provider
 export STRIX_LLM="openai/gpt-4o"
 export LLM_API_KEY="sk-..."
-
-# Optional: Telemetry & Research
-export PERPLEXITY_API_KEY="pplx-..."  # For web research
-export LANGFUSE_PUBLIC_KEY="..."      # For tracing
 ```
+
+> Note: LLM integration is optional in v2. The core scanning workflow is fully functional without LLM.
 
 ---
 
 ## 💻 Usage
 
-### Basic Scanning
+### Web UI (Recommended)
+
 ```bash
-strix --target https://example.com
+./start.sh
 ```
 
-### 🔮 Omniscient Scanning (Crystal-Box)
-Provide full context for the deepest possible assessment:
+Features:
+- 📊 Real-time scan progress with phase visualization
+- 🔌 Plugin management (install/enable/disable)
+- 📈 Vulnerability dashboard with severity breakdown
+- 📄 Export reports (JSON, Markdown, SARIF)
+- 🌙 Dark/Light theme support
+
+### API Usage
+
 ```bash
-strix --target https://app.example.com \
-      --source ./src \
-      --docker ./docker-compose.yml
+# Create scan
+curl -X POST http://localhost:8000/api/scans \
+  -H "Content-Type: application/json" \
+  -d '{"target": "https://example.com"}'
+
+# Get scan status
+curl http://localhost:8000/api/scans/{scan_id}
+
+# List vulnerabilities
+curl http://localhost:8000/api/results/{scan_id}/vulnerabilities
 ```
-This enables the **Omniscient Workflow**, where Strix analyzes infrastructure, code, and the live application in unison.
 
-### 🔄 Combined DAST + SAST + IAST
-For the ultimate security assessment, deploy your target and enable all analysis modes:
-```bash
-strix --target http://localhost:8080 \
-      --source ./src \
-      --docker ./docker-compose.yml \
-      --deploy
+### WebSocket Events
+
+Connect to `ws://localhost:8000/ws/{client_id}` for real-time updates:
+
+```javascript
+// Subscribe to scan updates
+ws.send(JSON.stringify({ action: "subscribe", scan_id: "abc123" }))
+
+// Receive events
+// - scan.started
+// - phase.started / phase.completed
+// - plugin.started / plugin.output / plugin.completed
+// - vulnerability.found
+// - scan.completed / scan.failed
 ```
-| Mode | Description |
-|------|-------------|
-| DAST | Dynamic testing against running target |
-| SAST | Static code analysis in `./src` |
-| IAST | Container log analysis (SQL, errors, traces) |
 
-### Scope-Based Scanning (Enterprise)
-For complex engagements, use a scope file to define targets, credentials, and exclusions.
+---
 
-**scope.yaml:**
+## 🔌 Creating Custom Plugins
+
 ```yaml
-targets:
-  - name: "Main App"
-    url: "https://app.example.com"
-    credentials:
-      - username: "admin"
-        password_env: "ADMIN_PASS"
+# plugins/my-scanner/manifest.yaml
+name: my-scanner
+version: "1.0.0"
+display_name: "My Custom Scanner"
+description: "Custom vulnerability scanner"
+author: "Your Name"
+
+phases:
+  - VULNERABILITY_SCAN
+
+capabilities:
+  - WEB_SCANNING
+
+executable:
+  binary: my-scanner
+  install_method: go
+  install_command: "go install github.com/example/my-scanner@latest"
 ```
 
-**Run:**
-```bash
-strix --scope ./scope.yaml
-```
-
-### Custom Instructions
-Guide the agent to focus on specific threats:
-```bash
-strix --target https://api.app.com --instruction "Focus on BOLA vulnerabilities in the /users endpoint using Arjun for parameter discovery."
-```
-
-### 🎲 Reproducible Scans
-For compliance testing or debugging, use a fixed seed for deterministic results:
-```bash
-# Same seed = same scan behavior
-strix --target https://example.com --seed 12345
-
-# Verify a previous finding
-strix --target https://example.com --seed 12345  # Identical result
-```
-
-### ⚡ Performance Options
-Strix automatically optimizes performance with:
-- **Concurrent requests**: Up to 10 parallel HTTP requests (configurable)
-- **Connection pooling**: Reuses TCP connections for efficiency
-- **Method enumeration**: Tests all HTTP methods (GET/POST/PUT/DELETE/PATCH/OPTIONS/HEAD)
-
-**Result**: 5-10× faster scans compared to sequential execution
-
----
-
-## 🛠️ Customization & Development Guide
-
-Strix is designed to be easily extensible. Here is how you can customize it to fit your needs:
-
-### 1. Improving Vulnerability Detection
-To modify *how* Strix detects vulnerabilities or to add new attack vectors, edit the prompt modules in `strix/prompts/vulnerabilities/`.
-*   **Location**: `strix/prompts/vulnerabilities/*.jinja`
-*   **Action**: Edit the `<methodology>` and `<automation_patterns>` sections.
-*   **Example**: To add a new JWT bypass technique, edit `jwt.jinja` and add the specific python code pattern to the `<automation_patterns>` block.
-
-### 2. Adding New Tools
-Strix supports custom Python tools that agents can use.
-*   **Location**: `strix/tools/`
-*   **How to Add**:
-    1.  Create a new file (e.g., `strix/tools/my_custom_tool.py`).
-    2.  Define your function and use the `@register_tool` decorator.
-    3.  Import your tool in `strix/tools/registry.py`.
 ```python
-from strix.tools.registry import register_tool
+# plugins/my-scanner/plugin.py
+from strix.plugins.base import BasePlugin, ScanPhase, PluginCapability
 
-@register_tool(sandbox_execution=True) # Set False if it needs local network access
-def my_custom_tool(target_url: str) -> dict:
-    """Description that the Agent sees to understand when to use this tool."""
-    # Your logic here
-    return {"status": "success", "data": ...}
-```
-
-### 3. Configuring Agent Behavior
-*   **Timeouts**: Set `AGENT_TIMEOUT_MINUTES` environment variable to limit how long a sub-agent can run (default: 30 mins).
-*   **Max Iterations**: Modify `max_iterations` in `strix/interface/tui.py` or `strix/agents/StrixAgent/strix_agent.py`.
-
-### 4. Limiting Detection Methods
-If you want to restrict the agent to specific test types (e.g., *only* SQL Injection):
-*   **CLI**: Use the `--instruction` flag.
-    ```bash
-    strix --target ... --instruction "Only test for SQL Injection. Do NOT perform fuzzing or XSS tests."
-    ```
-*   **TCI Override**: You can modify `strix/core/tci.py` to force-filter specific modules, though instruction-based guidance is usually sufficient.
-
-## 🏗️ Architecture
-
-Strix is built on a modern, modular stack:
-- **Core**: Python 3.12+ with Pydantic for robust data validation.
-- **Sandboxing**: Docker containers for safe tool execution.
-- **Observability**: OpenTelemetry and Langfuse for deep tracing of agent thoughts.
-- **UI**: Textual-based TUI for a rich terminal experience.
-
-### 🎯 Deterministic Phase-Driven Scanning Architecture
-
-**NEW**: Strix v2.0 introduces a completely refactored scanning engine with deterministic flow control:
-
-#### Core Principles
-1. **Code Controls Flow**: `ScanController` manages all phase transitions and scan completion—LLM agents only analyze data
-2. **Phase-Based Execution**: Strict sequential phases ensure complete coverage
-3. **Task Queue Driven**: All work items processed through a managed queue  
-4. **Zero Premature Termination**: Finding vulnerabilities doesn't stop the scan
-
-#### Scanning Phases
-
-```
-ENUMERATION → PARAM_EXPANSION → VULNERABILITY_TEST → LLM_VERIFICATION → DEEP_ANALYSIS → SUMMARY
-```
-
-| Phase | LLM Role | Code Role | Output |
-|-------|----------|-----------|--------|
-| **ENUMERATION** | Extract URLs/params from responses | Execute HTTP requests, manage queue | New scan targets |
-| **PARAM_EXPANSION** | Suggest hidden parameters | Create test tasks for each param | Parameter test tasks |
-| **VULNERABILITY_TEST** | Detect vulnerability indicators | Execute tests, track coverage | Suspected vulnerabilities |
-| **LLM_VERIFICATION** | Generate PoC strategies | Execute PoCs, validate results | Verified vulnerabilities |
-| **DEEP_ANALYSIS** | Identify exploit chains | Coordinate multi-step tests | Chained exploits |
-| **SUMMARY** | Summarize findings | Finalize report | Scan complete |
-
-#### Key Components
-
-**ScanController** (`strix/core/scan_controller.py`)
-- **Single source of truth** for scan state
-- Manages task queue (FIFO execution)
-- Enforces phase transitions (no LLM input)
-- Determines scan completion via hard-coded conditions:
-  ```python
-  is_complete = (queue_empty AND phase==SUMMARY AND summary_executed)
-  ```
-
-**ScanTask** (`strix/core/scan_phase.py`)
-- Represents a single unit of work (URL + method + params + phase)
-- Deduplication via signature to prevent infinite loops
-- Tracks tested vulnerabilities to ensure coverage
-
-**PoCValidator** (`strix/core/poc_validator.py`)
-- **Code-based validation** of suspected vulnerabilities
-- Type-specific validators: XSS, SQLi, SSRF, XXE, RCE, IDOR
-- LLM generates PoC strategies → Code validates → Report only confirmed
-
-**Pydantic Schemas** (`strix/core/phase_schemas.py`)
-- Strict validation of all LLM outputs
-- Prevents silent failures from malformed JSON
-- Type safety for discovered URLs, parameters, vulnerabilities
-
-#### LLM Constraints
-
-LLMs are **strictly prohibited** from:
-- ❌ Deciding when to transition phases
-- ❌ Determining scan completion
-- ❌ Declaring vulnerabilities as "confirmed"
-- ❌ Calling `finish_scan` tool when controller is active
-
-LLMs are **only allowed** to:
-- ✅ Analyze HTTP responses for data extraction
-- ✅ Suggest parameters and attack vectors
-- ✅ Generate PoC test strategies
-- ✅ Identify potential vulnerability indicators
-
-#### Performance Optimizations
-
-**HTTP Method Enumeration**
-- Automatically tests GET, POST, PUT, DELETE, PATCH, OPTIONS, HEAD
-- Discovers method-specific vulnerabilities (e.g., unsafe PUT uploads)
-- 7× more comprehensive than GET-only testing
-
-**Concurrent Execution** (`strix/core/concurrent_executor.py`)
-- Parallel HTTP requests (configurable, default: 10 concurrent)
-- Connection pooling for efficiency
-- **5-10× faster** than sequential execution
-- Rate limiting to respect target servers
-
-**Reproducible Scans**
-- `--seed` parameter for deterministic LLM sampling
-- Same seed → same URL discovery → same test sequence
-- Enables compliance validation and debugging
-
-```bash
-# Reproducible scan
-strix --target example.com --seed 42
-
-# All runs with seed=42 produce identical task sequences
+class MyScanner(BasePlugin):
+    name = "my-scanner"
+    version = "1.0.0"
+    phases = [ScanPhase.VULNERABILITY_SCAN]
+    capabilities = [PluginCapability.WEB_SCANNING]
+    
+    async def execute(self, target, phase, parameters):
+        async for event in self.stream_command(
+            ["my-scanner", "-target", target],
+            phase,
+            line_parser=self._parse_output,
+        ):
+            yield event
 ```
 
 ---
 
-## 🚀 Enhanced Features (vs. Original Strix)
+## ⚠️ What's NOT in Strix v2
 
-This fork extends the [original Strix](https://github.com/usestrix/strix) with significant new capabilities, focusing on **Inter-Agent Coordination** and **Gray-Box testing**:
+The following v1 features have been **permanently removed**:
 
-### 🧠 Advanced Agent Coordination
-|Feature|Original Strix|This Version|
-|---|---|---|
-|**Agent Roles**|Generic agents|**Specialized Roles**: `BlackboxScanner`, `WhiteboxVerifier`, `GrayboxMonitor`|
-|**Communication**|Basic message passing|**Bidirectional Handoff**: <br>1. Blackbox -> Whitebox (Trace Trigger Point) <br>2. Whitebox -> Blackbox (Verify Code Flaw)|
-|**Verification**|Mostly autonomous black-box|**Silent Detection**: Graybox finds vulnerabilities via **internal logs/DB** even if HTTP response is normal (200 OK)| |
+| Removed Feature | Reason |
+|-----------------|--------|
+| **Agent loops** | LLM should advise, not control |
+| **Docker/Sandbox runtime** | Tools run natively for transparency |
+| **CLI/TUI interface** | Replaced by Web UI + API |
+| **LLM-controlled tool selection** | Code determines workflow |
+| **MCP gateway** | Agent-specific, not needed |
+| **Scope configuration files** | Replaced by ScanConfig API |
+| **Multi-agent orchestration** | Single deterministic engine |
+| **Autonomous scanning** | Human-in-the-loop required |
 
-### 🔮 Omniscient Testing (Crystal-Box Mode)
-| Feature | Description |
-|---------|-------------|
-| **Infrastructure Analysis** | Phase 0 analysis of `Dockerfile`, `docker-compose.yml`, and `.env` files |
-| **Gray-Box Workflow** | Correlates static code analysis with dynamic testing results |
-| **Full-Chain Exploitation** | Chains vulnerabilities across infrastructure, code, and runtime layers |
-| **State Monitoring** | **NEW**: Agents can now execute commands inside containers (`psql`, `cat logs`) to confirm invisible side-effects (Blind SQLi, RCE) |
+See [v2 设计哲学](docs/strix-v2-philosophy.md) for the architectural rationale.
 
-### 🔄 Combined DAST + SAST + IAST
-| Mode | New CLI Flag | Capability |
-|------|--------------|------------|
-| SAST | `--source ./path` | Static analysis of local source code |
-| DAST | `--target URL` | Dynamic testing against running targets |
-| IAST | `--docker ./docker-compose.yml --deploy` | Auto-deploy target containers, monitor logs, AND **inspect internal state** |
+---
 
-### 🛠️ New CLI Arguments
+## 📁 Project Structure
+
 ```
--S, --source PATH    Path to local source code directory
--D, --docker PATH    Path to docker-compose.yml or Dockerfile
--C, --container ID   Name/ID of existing container to attach
-    --deploy         Auto-deploy target containers before testing
+strix/
+├── desktop/              # Tauri + React frontend
+├── plugins/              # Security tool plugins
+│   ├── nuclei/
+│   ├── httpx/
+│   ├── ffuf/
+│   ├── katana/
+│   └── sqlmap/
+├── strix/
+│   ├── server/           # FastAPI backend
+│   │   ├── app.py        # Main application
+│   │   └── routes/       # API endpoints
+│   ├── engine/           # Scan engine
+│   │   ├── scan_engine.py
+│   │   ├── phase_manager.py
+│   │   ├── event_bus.py
+│   │   └── result_collector.py
+│   ├── plugins/          # Plugin infrastructure
+│   │   ├── base.py
+│   │   ├── registry.py
+│   │   └── loader.py
+│   ├── storage/          # SQLite persistence
+│   │   ├── database.py
+│   │   └── models.py
+│   └── llm/              # LLM integration (optional)
+├── docs/
+│   └── strix-v2-philosophy.md
+├── start.sh              # One-click launcher
+└── pyproject.toml
 ```
 
-### 📦 New Components
-| File | Purpose |
-|------|---------|
-| `strix/runtime/deployment_manager.py` | Docker-compose orchestration & command execution |
-| `strix/tools/container_tools.py` | Tools for log reading and **arbitrary command execution** in containers |
-| `strix/prompts/coordination/agent_roles.jinja` | Role definitions and collaboration protocols |
+---
 
-### 🧠 Agent Enhancements
-- **Infrastructure Agent**: New agent type for Phase 0 infrastructure mapping
-- **Graybox Monitor**: New role using `execute_container_command` to inspect DB/filesystem changes
-- **Omniscient Workflow**: Infrastructure → Code → Validation → Reporting → Fixing
+## 🤝 Contributing
 
-### Example: Full Omniscient Scan
-```bash
-strix --target http://localhost:8080 \
-      --source ./src \
-      --docker ./docker-compose.yml \
-      --deploy \
-      --instruction "Focus on SSRF. Use the GrayboxMonitor to check if the request hit the internal Redis."
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Key principle: Any change must align with the [v2 设计哲学](docs/strix-v2-philosophy.md).
+
+---
+
+## 📄 License
+
+Apache 2.0 - See [LICENSE](LICENSE)
+
+---
+
+## 🙏 Acknowledgments
+
+- [ProjectDiscovery](https://projectdiscovery.io/) for Nuclei, httpx, katana
+- [ffuf](https://github.com/ffuf/ffuf) for web fuzzing
+- [sqlmap](https://sqlmap.org/) for SQL injection testing

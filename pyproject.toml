@@ -38,8 +38,9 @@ include = [
   "strix/**/*.tcss"
 ]
 
-[tool.poetry.scripts]
-strix = "strix.interface.main:main"
+# CLI entry removed in v2 - use: uvicorn strix.server.app:app
+# [tool.poetry.scripts]
+# strix = "strix.interface.main:main"
 
 [tool.poetry.dependencies]
 python = "^3.12"

@@ -27,8 +27,15 @@ from strix.llm.config import LLMConfig
 from strix.llm.memory_compressor import MemoryCompressor
 from strix.llm.request_queue import get_global_queue
 from strix.llm.utils import _truncate_to_first_function, parse_tool_invocations
-from strix.prompts import load_prompt_modules
-from strix.tools import get_tools_prompt
+
+# v2: Agent-specific prompt modules removed, provide stubs
+def load_prompt_modules(modules: list, env) -> dict:
+    """Stub: prompt modules removed in v2."""
+    return {}
+
+def get_tools_prompt() -> str:
+    """Stub: tools prompt removed in v2."""
+    return ""
 
 
 logger = logging.getLogger(__name__)

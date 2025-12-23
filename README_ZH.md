@@ -6,6 +6,33 @@
 
 与依赖静态规则的传统扫描器不同，Strix 使用大型语言模型 (LLM) 来理解应用程序的上下文，规划复杂的攻击向量，并实时调整其策略。
 
+## 🚀 快速开始（一键启动）
+
+```bash
+# 克隆并启动
+git clone https://github.com/your-org/strix.git
+cd strix
+
+# 一键启动（启动后端 + Web UI）
+./start.sh
+
+# 或启动 Tauri 桌面应用
+./start.sh desktop
+```
+
+启动脚本会自动完成：
+1. ✅ 检查依赖（Python、Node.js）
+2. ✅ 设置 Python 虚拟环境
+3. ✅ 安装前端依赖
+4. ✅ 启动后端 API 服务器（端口 8000）
+5. ✅ 启动 Web UI（端口 5173）
+6. ✅ 自动打开浏览器
+
+**访问地址：**
+- 🌐 Web UI: http://localhost:5173
+- 📡 API: http://localhost:8000
+- 📖 API 文档: http://localhost:8000/docs
+
 ---
 
 ## ✨ 核心能力
@@ -88,11 +115,58 @@ Strix 遵循**代码控制**的**基于阶段**的方法论，确保完整覆盖
 ## 🚀 安装
 
 ### 前置条件
-1.  **Docker**：Strix 在 Docker 中运行其沙箱环境。
-2.  **Python 3.12+**：CLI 需要此版本。
+1.  **Python 3.12+**：后端需要此版本。
+2.  **Node.js 18+**：桌面 UI 需要此版本。
 3.  **LLM API Key**：访问强大的 LLM（例如 OpenAI GPT-4o, Claude 3.5 Sonnet）。
 
-### 通过 pipx 安装 (推荐)
+### 一键安装（推荐）
+```bash
+# 克隆仓库
+git clone https://github.com/your-org/strix.git
+cd strix
+
+# 赋予启动脚本执行权限
+chmod +x start.sh
+
+# 启动一切
+./start.sh
+```
+
+### 手动安装
+
+#### 后端（Python）
+```bash
+# 创建虚拟环境
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 安装 Strix
+pip install -e .
+```
+
+#### 前端（Node.js）
+```bash
+cd desktop
+pnpm install
+```
+
+#### 安全工具（可选但推荐）
+```bash
+# 通过辅助脚本安装
+./start.sh tools
+
+# 或手动安装：
+# Go 工具（需要已安装 Go）
+go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
+go install github.com/projectdiscovery/httpx/cmd/httpx@latest
+go install github.com/ffuf/ffuf/v2@latest
+go install github.com/projectdiscovery/katana/cmd/katana@latest
+
+# Python 工具
+pipx install sqlmap
+```
+
+### 通过 pipx 安装（仅 CLI）
 ```bash
 pipx install .
 ```
@@ -122,7 +196,26 @@ export LANGFUSE_PUBLIC_KEY="..."      # 用于追踪
 
 ## 💻 使用方法
 
-### 基础扫描
+### 🖥️ 桌面 UI（推荐）
+
+全新的 Strix 桌面 UI 提供可视化界面来管理扫描：
+
+```bash
+# 启动 Web UI + 后端
+./start.sh dev
+
+# 或启动原生桌面应用（Tauri）
+./start.sh desktop
+```
+
+**功能特性：**
+- 📊 实时扫描进度与阶段可视化
+- 🔌 插件管理（安装/启用/禁用）
+- 📈 漏洞仪表盘，按严重程度分类
+- 📄 导出报告（JSON、Markdown、SARIF）
+- 🌙 深色/浅色主题支持
+
+### CLI 扫描
 ```bash
 strix --target https://example.com
 ```
@@ -239,9 +332,63 @@ def my_custom_tool(target_url: str) -> dict:
 
 Strix 构建在现代化、模块化的技术栈之上：
 - **核心**: Python 3.12+ 配合 Pydantic 进行强大的数据验证
-- **沙箱**: Docker 容器确保工具安全执行
+- **后端**: FastAPI 服务器，支持 WebSocket 实时更新
+- **前端**: Tauri 2.0 + React + TypeScript 桌面应用程序
+- **插件**: 可扩展的安全工具插件系统（Nuclei、HTTPX、ffuf 等）
 - **可观察性**: OpenTelemetry 和 Langfuse 深度追踪智能体思考过程
-- **用户界面**: 基于 Textual 的 TUI 提供丰富的终端体验
+
+### 🔌 基于插件的架构 (v2.0)
+
+Strix v2.0 引入了**无 Docker 依赖的插件系统**，原生运行安全工具：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      Strix 桌面 UI                              │
+│                   (Tauri + React + TypeScript)                  │
+├─────────────────────────────────────────────────────────────────┤
+│                       FastAPI 后端                              │
+│                     (REST API + WebSocket)                      │
+├─────────────────────────────────────────────────────────────────┤
+│                         扫描引擎                                │
+│    ┌──────────────┬──────────────┬──────────────────────┐      │
+│    │   事件总线   │  阶段管理器  │     结果收集器       │      │
+│    └──────────────┴──────────────┴──────────────────────┘      │
+├─────────────────────────────────────────────────────────────────┤
+│                        插件注册表                               │
+│    ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐     │
+│    │ Nuclei │ │ HTTPX  │ │  ffuf  │ │ Katana │ │ SQLMap │     │
+│    └────────┘ └────────┘ └────────┘ └────────┘ └────────┘     │
+├─────────────────────────────────────────────────────────────────┤
+│                        LLM 集成                                 │
+│           (规划、分析、验证、链式利用)                          │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**内置插件：**
+
+| 插件 | 阶段 | 描述 |
+|--------|-------|-------------|
+| `nuclei` | 漏洞扫描 | 基于模板的漏洞扫描 |
+| `httpx` | 侦察 | HTTP 探测和技术检测 |
+| `ffuf` | 枚举 | Web 内容发现和模糊测试 |
+| `katana` | 侦察 | Web 爬虫和 URL 发现 |
+| `sqlmap` | 利用 | SQL 注入检测和利用 |
+
+**创建自定义插件：**
+
+```yaml
+# plugins/my-plugin/manifest.yaml
+name: my-scanner
+version: "1.0.0"
+description: "我的自定义安全扫描器"
+phases: [VULNERABILITY_SCAN]
+capabilities: [WEB_SCANNING]
+
+executable:
+  binary: my-scanner
+  install_method: go
+  install_command: "go install github.com/example/my-scanner@latest"
+```
 
 ### 🎯 确定性阶段驱动扫描架构
 

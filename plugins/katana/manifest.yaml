@@ -1,0 +1,141 @@
+name: katana
+version: "1.0"
+description: Next-generation crawling and spidering framework
+author: ProjectDiscovery
+homepage: https://github.com/projectdiscovery/katana
+license: MIT
+
+phases:
+  - ENUMERATION
+  - RECONNAISSANCE
+
+capabilities:
+  - WEB_CRAWLING
+  - ENDPOINT_ENUMERATION
+  - JS_CRAWLING
+
+install:
+  method: go
+  package: github.com/projectdiscovery/katana/cmd/katana@latest
+  verify_command: katana -version
+
+executable:
+  name: katana
+  paths:
+    - katana
+    - ~/go/bin/katana
+    - /usr/local/bin/katana
+
+parameters:
+  - name: target
+    type: string
+    required: true
+    description: Target URL to crawl
+    cli_flag: -u
+
+  - name: target_list
+    type: string
+    required: false
+    description: File containing target URLs
+    cli_flag: -list
+
+  - name: depth
+    type: integer
+    required: false
+    description: Maximum depth to crawl
+    cli_flag: -d
+    default: 3
+
+  - name: headless
+    type: boolean
+    required: false
+    description: Enable headless browser mode
+    cli_flag: -headless
+    default: false
+
+  - name: js_crawl
+    type: boolean
+    required: false
+    description: Enable JS file parsing
+    cli_flag: -js-crawl
+    default: true
+
+  - name: timeout
+    type: integer
+    required: false
+    description: Request timeout in seconds
+    cli_flag: -timeout
+    default: 15
+
+  - name: concurrency
+    type: integer
+    required: false
+    description: Number of concurrent crawlers
+    cli_flag: -c
+    default: 10
+
+  - name: parallelism
+    type: integer
+    required: false
+    description: Number of parallel workers
+    cli_flag: -p
+    default: 10
+
+  - name: delay
+    type: integer
+    required: false
+    description: Delay between requests in seconds
+    cli_flag: -delay
+    default: 0
+
+  - name: scope
+    type: string
+    required: false
+    description: Crawl scope regex
+    cli_flag: -field-scope
+    default: rdn
+
+  - name: form_fill
+    type: boolean
+    required: false
+    description: Enable form filling
+    cli_flag: -automatic-form-fill
+    default: true
+
+  - name: known_files
+    type: boolean
+    required: false
+    description: Enable known file discovery
+    cli_flag: -known-files
+    default: true
+
+  - name: extension_filter
+    type: string
+    required: false
+    description: Filter by extension
+    cli_flag: -extension-filter
+    default: ""
+
+  - name: output_all
+    type: boolean
+    required: false
+    description: Output all discovered URLs
+    cli_flag: -output-all
+    default: false
+
+output:
+  format: jsonl
+  fields:
+    - name: request.endpoint
+      maps_to: url
+    - name: request.method
+      maps_to: method
+    - name: request.tag
+      maps_to: tag
+    - name: request.attribute
+      maps_to: attribute
+    - name: response.status_code
+      maps_to: status_code
+
+timeout_seconds: 1800
+rate_limit_per_minute: 600
