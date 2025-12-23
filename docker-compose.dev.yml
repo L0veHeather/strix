@@ -49,6 +49,8 @@ services:
       # Output directories for scan results (mounted to host for easy access)
       - ./strix_runs:/app/strix_runs
       - ./agent_runs:/app/agent_runs
+      # Mount Docker socket for container interaction (Omniscient Mode)
+      - /var/run/docker.sock:/var/run/docker.sock
 
     # Interactive terminal
     stdin_open: true
