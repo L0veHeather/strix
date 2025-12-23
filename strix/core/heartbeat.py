@@ -4,6 +4,8 @@ This module provides a deterministic, concurrency-safe heartbeat mechanism
 that outputs scan state every N seconds, even when no tasks complete.
 """
 
+from __future__ import annotations
+
 import asyncio
 import logging
 import time
