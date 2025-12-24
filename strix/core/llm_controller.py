@@ -6,20 +6,33 @@ This is the main coordinator that:
 3. Sends HTTP requests (deterministic logic)
 4. Submits responses to LLM for judgment (AI Brain)
 5. Collects and returns standardized findings
+6. [NEW] Implements feedback loop for uncertain findings (50-80% confidence)
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
+from collections import deque
+from dataclasses import dataclass
 from typing import AsyncIterator, Any
 
 import httpx
 
 from strix.brain.llm_judge import LLMJudge
 from strix.models.finding import VulnFinding
-from strix.models.judgment import JudgmentRequest
+from strix.models.judgment import JudgmentRequest, JudgmentResult
 from strix.models.request import HttpRequest, HttpResponse, ScanTarget
+from strix.models.verification import (
+    VerificationTask,
+    VerificationPriority,
+    CONFIDENCE_CONFIRMED,
+    CONFIDENCE_UNCERTAIN_HIGH,
+    CONFIDENCE_UNCERTAIN_LOW,
+    MAX_VERIFICATION_DEPTH,
+    MAX_VERIFICATION_ATTEMPTS,
+)
 from strix.plugins.vulns import BaseVulnPlugin, PayloadContext, PayloadSpec
 
 logger = logging.getLogger(__name__)
@@ -62,12 +75,22 @@ class ScanController:
         self._semaphore: asyncio.Semaphore | None = None
         self._client: httpx.AsyncClient | None = None
         
+        # === Feedback Loop State ===
+        # Priority queue for verification tasks (high priority at front)
+        self._verification_queue: deque[VerificationTask] = deque()
+        # Track verification attempts per finding chain
+        self._verification_attempts: dict[str, int] = {}
+        # Enable/disable recursive verification
+        self.enable_feedback_loop: bool = True
+        
         # Statistics
         self.stats = {
             "requests_sent": 0,
             "payloads_tested": 0,
             "findings_confirmed": 0,
             "llm_calls": 0,
+            "verification_tasks_generated": 0,
+            "verification_tasks_resolved": 0,
         }
     
     async def __aenter__(self) -> "ScanController":
@@ -225,6 +248,7 @@ class ScanController:
         plugin: BaseVulnPlugin,
         payload_spec: PayloadSpec,
         baseline: HttpResponse,
+        verification_task: VerificationTask | None = None,
     ) -> VulnFinding | None:
         """Test a single payload and get LLM judgment.
         
@@ -232,14 +256,22 @@ class ScanController:
         1. Send HTTP request with payload
         2. Build judgment request
         3. Submit to LLM
-        4. Process result through plugin
+        4. [NEW] Check confidence - if uncertain, spawn verification task
+        5. Process result through plugin
         """
         async with self._semaphore:
             self.stats["payloads_tested"] += 1
             
+            # Use verification payload if this is a verification task
+            actual_payload = (
+                verification_task.verification_payload 
+                if verification_task 
+                else payload_spec.payload
+            )
+            
             # 1. Send HTTP request with payload
             request, response = await self._send_payload_request(
-                target, parameter, payload_spec.payload
+                target, parameter, actual_payload
             )
             self.stats["requests_sent"] += 1
             
@@ -247,24 +279,72 @@ class ScanController:
                 return None
             
             # 2. Build judgment request
+            expected_behavior = (
+                verification_task.expected_behavior
+                if verification_task
+                else payload_spec.expected_behavior
+            )
+            
             judgment_request = JudgmentRequest(
                 vuln_type=plugin.vuln_type,
                 target=target.url,
-                payload=payload_spec.payload,
+                payload=actual_payload,
                 raw_request=request.to_raw(),
                 raw_response=response.to_raw(),
                 baseline_response=baseline.to_raw(),
                 response_time_ms=response.response_time_ms,
                 baseline_time_ms=baseline.response_time_ms,
                 context=plugin.get_judgment_context(payload_spec),
-                expected_behavior=payload_spec.expected_behavior,
+                expected_behavior=expected_behavior,
             )
             
             # 3. Submit to LLM
             self.stats["llm_calls"] += 1
             judgment_result = await self.llm_judge.judge(judgment_request)
             
-            # 4. Process through plugin
+            # 4. [NEW] Feedback Loop - Check if confidence is uncertain
+            finding = await self._process_judgment_with_feedback(
+                judgment_request,
+                judgment_result,
+                plugin,
+                payload_spec,
+                request,
+                response,
+                target,
+                verification_task,
+            )
+            
+            return finding
+    
+    async def _process_judgment_with_feedback(
+        self,
+        judgment_request: JudgmentRequest,
+        judgment_result: JudgmentResult,
+        plugin: BaseVulnPlugin,
+        payload_spec: PayloadSpec,
+        request: HttpRequest,
+        response: HttpResponse,
+        target: ScanTarget,
+        verification_task: VerificationTask | None = None,
+    ) -> VulnFinding | None:
+        """Process judgment with feedback loop for uncertain findings.
+        
+        Confidence Zones:
+        - >= 80%: Confirmed (return finding)
+        - 50-80%: Uncertain (spawn verification task)
+        - < 50%: Rejected (return None)
+        """
+        confidence = judgment_result.confidence_score
+        
+        # Track chain ID for attempt limiting
+        chain_id = (
+            verification_task.parent_task_id or verification_task.task_id
+            if verification_task
+            else str(uuid.uuid4())[:8]
+        )
+        
+        # === HIGH CONFIDENCE: Confirmed ===
+        if confidence >= CONFIDENCE_CONFIRMED:
             finding = plugin.process_judgment(
                 payload_spec,
                 judgment_result,
@@ -272,12 +352,111 @@ class ScanController:
                 response.to_raw(),
                 target.url,
             )
-            
             if finding:
                 self.stats["findings_confirmed"] += 1
-                logger.info(f"[+] Found {plugin.vuln_type}: {target.url}")
-            
+                if verification_task:
+                    self.stats["verification_tasks_resolved"] += 1
+                logger.info(f"[+] CONFIRMED {plugin.vuln_type}: {target.url} (confidence: {confidence:.0%})")
             return finding
+        
+        # === LOW CONFIDENCE: Rejected ===
+        if confidence < CONFIDENCE_UNCERTAIN_LOW:
+            if verification_task:
+                self.stats["verification_tasks_resolved"] += 1
+            logger.debug(f"[-] Rejected {plugin.vuln_type}: confidence too low ({confidence:.0%})")
+            return None
+        
+        # === UNCERTAIN ZONE (50-80%): Spawn Verification Task ===
+        if not self.enable_feedback_loop:
+            logger.debug(f"[?] Uncertain {plugin.vuln_type} ({confidence:.0%}), feedback loop disabled")
+            return None
+        
+        # Check attempt limit
+        current_attempts = self._verification_attempts.get(chain_id, 0)
+        if current_attempts >= MAX_VERIFICATION_ATTEMPTS:
+            logger.warning(f"[!] Max verification attempts ({MAX_VERIFICATION_ATTEMPTS}) reached for chain {chain_id}")
+            return None
+        
+        # Check depth limit
+        current_depth = verification_task.depth if verification_task else 0
+        if current_depth >= MAX_VERIFICATION_DEPTH:
+            logger.warning(f"[!] Max verification depth ({MAX_VERIFICATION_DEPTH}) reached")
+            return None
+        
+        # Generate verification task
+        new_task_id = str(uuid.uuid4())[:8]
+        parent_id = verification_task.task_id if verification_task else chain_id
+        
+        logger.info(f"[?] Uncertain {plugin.vuln_type} ({confidence:.0%}), generating verification task...")
+        
+        new_verification_task = await self.llm_judge.generate_verification_task(
+            request=judgment_request,
+            result=judgment_result,
+            task_id=new_task_id,
+            parent_task_id=parent_id,
+            depth=current_depth,
+        )
+        
+        if new_verification_task:
+            # Add to queue based on priority
+            self._add_verification_task(new_verification_task)
+            self._verification_attempts[chain_id] = current_attempts + 1
+            self.stats["verification_tasks_generated"] += 1
+            
+            logger.info(
+                f"[+] Verification task {new_task_id} created: "
+                f"{new_verification_task.verification_payload[:50]}..."
+            )
+        
+        return None
+    
+    def _add_verification_task(self, task: VerificationTask) -> None:
+        """Add verification task to queue with priority handling.
+        
+        HIGH/CRITICAL priority tasks are added to the front of the queue.
+        """
+        if task.priority in (VerificationPriority.CRITICAL, VerificationPriority.HIGH):
+            self._verification_queue.appendleft(task)  # Front of queue
+        else:
+            self._verification_queue.append(task)  # Back of queue
+    
+    def get_pending_verification_tasks(self) -> list[VerificationTask]:
+        """Get all pending verification tasks."""
+        return list(self._verification_queue)
+    
+    async def process_verification_queue(
+        self,
+        target: ScanTarget,
+        plugin: BaseVulnPlugin,
+        baseline: HttpResponse,
+    ) -> AsyncIterator[VulnFinding]:
+        """Process all pending verification tasks.
+        
+        This should be called after initial scanning to resolve uncertain findings.
+        """
+        while self._verification_queue:
+            task = self._verification_queue.popleft()
+            
+            logger.info(f"[*] Processing verification task {task.task_id} (depth: {task.depth})")
+            
+            # Create a PayloadSpec from the verification task
+            verification_payload_spec = PayloadSpec(
+                payload=task.verification_payload,
+                description=f"Verification for {task.original_payload}",
+                expected_behavior=task.expected_behavior,
+            )
+            
+            finding = await self._test_payload(
+                target,
+                task.parameter,
+                plugin,
+                verification_payload_spec,
+                baseline,
+                verification_task=task,
+            )
+            
+            if finding:
+                yield finding
     
     async def _send_payload_request(
         self,

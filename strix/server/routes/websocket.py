@@ -189,6 +189,42 @@ def setup_event_bus_handlers():
                 "data": data,
             })
     
+    async def handle_llm_response(data: dict[str, Any]):
+        """Forward LLM judgment results with reasoning_trace for AI visualization."""
+        scan_id = data.get("scan_id")
+        # Broadcast to scan subscribers with full reasoning data
+        if scan_id:
+            await manager.broadcast_to_scan(scan_id, {
+                "type": "llm.response",
+                "data": {
+                    "scan_id": scan_id,
+                    "vuln_type": data.get("vuln_type", ""),
+                    "is_vulnerable": data.get("is_vulnerable", False),
+                    "confidence_score": data.get("confidence_score", 0.0),
+                    "reasoning": data.get("reasoning", ""),
+                    "reasoning_trace": data.get("reasoning_trace", ""),
+                    "evidence": data.get("evidence", []),
+                    "evidence_snippet": data.get("evidence_snippet", ""),
+                    "waf_detected": data.get("waf_detected", False),
+                    "waf_type": data.get("waf_type", ""),
+                },
+            })
+    
+    async def handle_verification_created(data: dict[str, Any]):
+        """Forward verification task creation events."""
+        scan_id = data.get("scan_id")
+        if scan_id:
+            await manager.broadcast_to_scan(scan_id, {
+                "type": "verification.created",
+                "data": {
+                    "scan_id": scan_id,
+                    "task_id": data.get("task_id", ""),
+                    "verification_payload": data.get("verification_payload", ""),
+                    "reason": data.get("reason", ""),
+                    "depth": data.get("depth", 0),
+                },
+            })
+    
     # Subscribe to events
     event_bus.subscribe(EventType.SCAN_STARTED, handle_scan_started)
     event_bus.subscribe(EventType.SCAN_PROGRESS, handle_scan_progress)
@@ -201,6 +237,7 @@ def setup_event_bus_handlers():
     event_bus.subscribe(EventType.PLUGIN_COMPLETED, handle_plugin_completed)
     event_bus.subscribe(EventType.PLUGIN_ERROR, handle_plugin_error)
     event_bus.subscribe(EventType.PLUGIN_OUTPUT, handle_plugin_output)
+    event_bus.subscribe(EventType.LLM_RESPONSE, handle_llm_response)
 
 
 # Initialize event handlers

@@ -74,6 +74,7 @@ class JudgmentResult:
     """Result of LLM vulnerability judgment.
     
     Contains the LLM's analysis and decision about the potential vulnerability.
+    Enhanced with detailed reasoning trace for chain-of-thought analysis.
     """
     
     # === Core judgment ===
@@ -82,9 +83,16 @@ class JudgmentResult:
     confidence_level: ConfidenceLevel
     risk_level: RiskLevel
     
-    # === Reasoning ===
-    reasoning: str               # LLM's reasoning process
+    # === Reasoning (Enhanced with CoT) ===
+    reasoning: str               # Brief summary of reasoning
+    reasoning_trace: str = ""    # Detailed step-by-step analysis (Markdown)
     evidence: list[str] = field(default_factory=list)  # Evidence list
+    evidence_snippet: str = ""   # Exact response snippet proving vulnerability
+    
+    # === WAF Detection ===
+    waf_detected: bool = False   # Whether a WAF/protection was detected
+    waf_type: str = ""           # Type of WAF detected (e.g., "Cloudflare", "ModSecurity")
+    waf_bypass_attempted: bool = False  # Whether payload attempted WAF bypass
     
     # === False positive analysis ===
     is_false_positive: bool = False
@@ -108,7 +116,12 @@ class JudgmentResult:
             "confidence_level": self.confidence_level.value,
             "risk_level": self.risk_level.value,
             "reasoning": self.reasoning,
+            "reasoning_trace": self.reasoning_trace,
             "evidence": self.evidence,
+            "evidence_snippet": self.evidence_snippet,
+            "waf_detected": self.waf_detected,
+            "waf_type": self.waf_type,
+            "waf_bypass_attempted": self.waf_bypass_attempted,
             "is_false_positive": self.is_false_positive,
             "false_positive_reasons": self.false_positive_reasons,
             "needs_further_testing": self.needs_further_testing,

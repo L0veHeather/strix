@@ -103,6 +103,34 @@ class LLMJudge(ABC):
         """
         pass
     
+    @abstractmethod
+    async def generate_verification_task(
+        self,
+        request: "JudgmentRequest",
+        result: "JudgmentResult",
+        task_id: str,
+        parent_task_id: str | None = None,
+        depth: int = 0,
+    ) -> "VerificationTask | None":
+        """Generate a follow-up verification task when confidence is uncertain.
+        
+        Called when JudgmentResult.confidence_score is in the uncertain zone
+        (typically 50-80%). The AI generates a new verification payload to
+        confirm or reject the potential vulnerability.
+        
+        Args:
+            request: Original JudgmentRequest
+            result: JudgmentResult with uncertain confidence
+            task_id: Unique ID for the new verification task
+            parent_task_id: ID of the original/parent task
+            depth: Current recursion depth (for loop prevention)
+            
+        Returns:
+            VerificationTask with new payload and instructions,
+            or None if maximum depth reached or no useful verification possible
+        """
+        pass
+    
     # === Helper methods ===
     
     def get_vuln_prompt(self, vuln_type: str) -> str:

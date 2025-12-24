@@ -96,11 +96,45 @@ setup_python_env() {
     log_info "Setting up Python environment..."
     
     if [ ! -d ".venv" ]; then
+        log_info "Creating virtual environment..."
         python3 -m venv .venv
     fi
     
     source .venv/bin/activate
-    pip install -q -e . 2>/dev/null || pip install -q -r requirements.txt 2>/dev/null || true
+    
+    # Upgrade pip
+    pip install --upgrade pip -q
+    
+    # Install core dependencies
+    log_info "Installing Python dependencies..."
+    pip install -q \
+        fastapi \
+        uvicorn \
+        httpx \
+        litellm \
+        openai \
+        pydantic \
+        rich \
+        textual \
+        docker \
+        pyyaml \
+        requests \
+        tenacity \
+        playwright \
+        xmltodict \
+        jinja2 \
+        aiofiles \
+        websockets \
+        2>/dev/null || true
+    
+    # Install package in development mode if possible
+    pip install -q -e . 2>/dev/null || true
+    
+    # Install GUI dependencies (optional)
+    log_info "Installing GUI dependencies (optional)..."
+    pip install -q PyQt6 markdown 2>/dev/null || log_warn "PyQt6 installation skipped (optional)"
+    
+    log_info "Python dependencies installed."
 }
 
 setup_frontend() {
