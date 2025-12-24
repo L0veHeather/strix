@@ -468,16 +468,3 @@ export default function SettingsPage() {
     </div>
   );
 }
-              <span className="text-muted-foreground">Version</span>
-              <span className="font-medium">2.0.0</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">License</span>
-              <span className="font-medium">MIT</span>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}

@@ -31,23 +31,23 @@ const SCAN_PHASES = [
 ];
 
 const SCAN_PRESETS = [
-  { 
-    id: "quick", 
-    name: "Quick Scan", 
+  {
+    id: "quick",
+    name: "Quick Scan",
     description: "Fast reconnaissance and basic vuln scan",
     phases: ["RECONNAISSANCE", "VULNERABILITY_SCAN"],
     icon: <Zap className="h-5 w-5" />,
   },
-  { 
-    id: "full", 
-    name: "Full Scan", 
+  {
+    id: "full",
+    name: "Full Scan",
     description: "Complete security assessment",
     phases: ["RECONNAISSANCE", "ENUMERATION", "VULNERABILITY_SCAN", "EXPLOITATION", "VALIDATION"],
     icon: <Shield className="h-5 w-5" />,
   },
-  { 
-    id: "recon", 
-    name: "Recon Only", 
+  {
+    id: "recon",
+    name: "Recon Only",
     description: "Information gathering only",
     phases: ["RECONNAISSANCE", "ENUMERATION"],
     icon: <Target className="h-5 w-5" />,
@@ -97,7 +97,7 @@ export default function ScanPage() {
         source: "system",
         message: `Scan created: ${scan.id}`,
       });
-      
+
       setActiveScan({
         id: scan.id,
         name: scan.name || "",
@@ -408,95 +408,6 @@ export default function ScanPage() {
           <p>• Ensure you have authorization to scan the target</p>
           <p>• Use "Quick Scan" for fast initial assessment</p>
           <p>• Configure scope to limit scan to specific paths</p>
-          <p>• Results are saved automatically during the scan</p>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-                      )}
-                      onClick={() => togglePhase(phase.id)}
-                    >
-                      <div>
-                        <p className="font-medium">{phase.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {phase.description}
-                        </p>
-                      </div>
-                      <div
-                        className={cn(
-                          "h-5 w-5 rounded-full border-2 flex items-center justify-center",
-                          selectedPhases.includes(phase.id)
-                            ? "border-primary bg-primary"
-                            : "border-muted-foreground"
-                        )}
-                      >
-                        {selectedPhases.includes(phase.id) && (
-                          <div className="h-2 w-2 rounded-full bg-primary-foreground" />
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Plugin Selection */}
-              <div className="space-y-3">
-                <label className="text-sm font-medium">Plugins</label>
-                <p className="text-xs text-muted-foreground">
-                  Select specific plugins to use (leave empty for all enabled)
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {pluginsData?.plugins.map((plugin) => (
-                    <Badge
-                      key={plugin.name}
-                      variant={
-                        selectedPlugins.includes(plugin.name)
-                          ? "default"
-                          : "outline"
-                      }
-                      className="cursor-pointer"
-                      onClick={() => togglePlugin(plugin.name)}
-                    >
-                      {plugin.name}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Start Button */}
-      <Button
-        size="lg"
-        className="w-full"
-        onClick={handleStartScan}
-        disabled={createScan.isPending || !target.trim()}
-      >
-        {createScan.isPending ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Starting Scan...
-          </>
-        ) : (
-          <>
-            <Play className="mr-2 h-4 w-4" />
-            Start Scan
-          </>
-        )}
-      </Button>
-
-      {/* Quick Tips */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Quick Tips</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>• Ensure you have authorization to scan the target</p>
-          <p>• Start with a smaller scope for faster results</p>
-          <p>• Use advanced options to customize scan behavior</p>
           <p>• Results are saved automatically during the scan</p>
         </CardContent>
       </Card>
