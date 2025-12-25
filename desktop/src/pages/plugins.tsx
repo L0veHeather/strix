@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Puzzle,
@@ -445,10 +445,24 @@ function AddCustomPluginDialog({
     use_cases: "",
     capabilities: [] as string[],
     phases: [] as string[],
+    plugin_dir: "",
     input_type: "url",
     output_format: "lines",
     icon: "🔧",
   });
+
+  // Directory list from API
+  const [directories, setDirectories] = useState<{ name: string, path: string, has_bin: boolean }[]>([]);
+
+  // Fetch available directories
+  useEffect(() => {
+    if (open) {
+      fetch("/api/custom-plugins/directories")
+        .then(r => r.json())
+        .then(data => setDirectories(data.directories || []))
+        .catch(console.error);
+    }
+  }, [open]);
 
   // Available options
   const availableCapabilities = [
@@ -509,9 +523,36 @@ function AddCustomPluginDialog({
           </div>
 
           <div>
+            <Label>插件目录 (可选，用于关联 plugins/ 或 user_plugins/ 下的工具)</Label>
+            <Select
+              value={formData.plugin_dir}
+              onValueChange={(v) =>
+                setFormData({ ...formData, plugin_dir: v === "_none_" ? "" : v })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="选择插件目录 (无)" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="_none_">无 (使用系统 PATH)</SelectItem>
+                {directories.map(d => (
+                  <SelectItem key={d.name} value={d.name}>
+                    {d.name} {d.has_bin ? "📦" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {formData.plugin_dir && (
+              <p className="text-xs text-muted-foreground mt-1">
+                命令将在 plugins/{formData.plugin_dir}/ 或 user_plugins/{formData.plugin_dir}/ 下执行
+              </p>
+            )}
+          </div>
+
+          <div>
             <Label>执行命令 * (使用 {"{target}"} 作为目标占位符)</Label>
             <Input
-              placeholder="nuclei -u {target} -silent"
+              placeholder={formData.plugin_dir ? "./bin/scanner {target}" : "nuclei -u {target} -silent"}
               value={formData.command}
               onChange={(e) =>
                 setFormData({ ...formData, command: e.target.value })

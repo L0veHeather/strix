@@ -47,6 +47,7 @@ class ScanConfig:
     
     target: str
     name: str | None = None
+    scan_id: str | None = None  # Optional: use existing scan_id from database
     
     # Phase configuration
     phases: list[ScanPhase] = field(default_factory=lambda: [
@@ -201,8 +202,8 @@ class ScanEngine:
         if not self._initialized:
             await self.initialize()
         
-        # Generate scan ID
-        scan_id = str(uuid.uuid4())[:8]
+        # Use provided scan_id or generate new one
+        scan_id = config.scan_id or str(uuid.uuid4())[:8]
         
         # Create scan state
         state = ScanState(
@@ -241,13 +242,19 @@ class ScanEngine:
     
     async def _run_scan(self, scan_id: str) -> None:
         """Internal method to run a scan."""
+        from trix.storage import get_database, ScanStatus as DbScanStatus
+        
         state = self._scans[scan_id]
         config = state.config
         collector = self._collectors[scan_id]
         phase_manager = self._phase_managers[scan_id]
+        db = get_database()
         
         state.status = ScanStatus.RUNNING
         state.started_at = datetime.now(timezone.utc)
+        
+        # Sync to database
+        db.update_scan(scan_id, status=DbScanStatus.RUNNING)
         
         # Emit scan started event
         await self._event_bus.publish(Event(
@@ -258,17 +265,29 @@ class ScanEngine:
         
         try:
             total_phases = len(config.phases)
-            completed_phases = 0
+            completed_phases_set: set[str] = set()
             
             async for result in phase_manager.execute_all(
                 config.target,
                 scan_id,
                 config.phases,
             ):
+                # Track unique completed phases
+                phase_value = result.phase.value
+                if phase_value not in completed_phases_set:
+                    completed_phases_set.add(phase_value)
+                
                 # Update state
                 state.current_phase = result.phase
-                completed_phases += 1
-                state.progress = (completed_phases / total_phases) * 100
+                completed_count = len(completed_phases_set)
+                state.progress = min((completed_count / total_phases) * 100, 100)  # Cap at 100%
+                
+                # Sync progress to database
+                db.update_scan(
+                    scan_id,
+                    current_phase=result.phase.value,
+                    progress=state.progress,
+                )
                 
                 # Collect findings
                 collector.add_findings(result.findings)
@@ -286,6 +305,15 @@ class ScanEngine:
             state.current_phase = None
             state.progress = 100
             
+            # Sync to database
+            db.update_scan(
+                scan_id,
+                status=DbScanStatus.COMPLETED,
+                current_phase=None,
+                progress=100,
+                completed=True,
+            )
+            
             collector.mark_scan_completed()
             
             # Auto-export results
@@ -301,6 +329,7 @@ class ScanEngine:
             
         except asyncio.CancelledError:
             state.status = ScanStatus.CANCELLED
+            db.update_scan(scan_id, status=DbScanStatus.CANCELLED)
             await self._event_bus.publish(Event(
                 type=EventType.SCAN_CANCELLED,
                 scan_id=scan_id,
@@ -311,6 +340,12 @@ class ScanEngine:
             logger.exception(f"Scan {scan_id} failed")
             state.status = ScanStatus.FAILED
             state.error = str(e)
+            
+            db.update_scan(
+                scan_id,
+                status=DbScanStatus.FAILED,
+                error_message=str(e),
+            )
             
             await self._event_bus.publish(Event(
                 type=EventType.SCAN_FAILED,
@@ -328,7 +363,7 @@ class ScanEngine:
         collector = self._collectors[scan_id]
         
         # Determine output directory
-        output_dir = config.output_dir or Path.home() / ".strix" / "scans" / scan_id
+        output_dir = config.output_dir or Path.home() / ".trix" / "scans" / scan_id
         output_dir.mkdir(parents=True, exist_ok=True)
         
         for fmt in config.export_formats:

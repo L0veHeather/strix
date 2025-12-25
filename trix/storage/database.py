@@ -61,7 +61,7 @@ class Database:
             db_path: Path to SQLite database file. If None, uses default location.
         """
         if db_path is None:
-            db_path = Path.home() / ".strix" / "trix.db"
+            db_path = Path.home() / ".trix" / "trix.db"
         
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -441,6 +441,7 @@ class Database:
         use_cases: list[str] | None = None,
         capabilities: list[str] | None = None,
         phases: list[str] | None = None,
+        plugin_dir: str | None = None,
         input_type: str = "url",
         output_format: str = "lines",
         output_pattern: str | None = None,
@@ -456,6 +457,7 @@ class Database:
                 use_cases=use_cases or [],
                 capabilities=capabilities or [],
                 phases=phases or [],
+                plugin_dir=plugin_dir,
                 input_type=input_type,
                 output_format=output_format,
                 output_pattern=output_pattern,

@@ -59,7 +59,7 @@ class PluginLoader:
             Path(__file__).parent.parent.parent / "plugins"
         )
         self.user_plugins_dir = user_plugins_dir or (
-            Path.home() / ".strix" / "plugins"
+            Path.home() / ".trix" / "plugins"
         )
         
         # Ensure directories exist

@@ -74,7 +74,7 @@ async def list_plugins(
     
     plugins = []
     
-    for plugin in registry.list_plugins():
+    for plugin in registry.get_loaded_plugins():
         # Filter by phase
         if phase and phase.upper() not in [p.name for p in plugin.phases]:
             continue

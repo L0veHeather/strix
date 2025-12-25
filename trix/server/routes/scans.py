@@ -87,6 +87,7 @@ async def create_scan(request: CreateScanRequest, background_tasks: BackgroundTa
     config_kwargs = {
         "target": request.target,
         "name": request.name,
+        "scan_id": scan.id,  # Pass database scan_id to engine
         "plugins": request.plugins or [],
     }
     

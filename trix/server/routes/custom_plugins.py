@@ -11,6 +11,7 @@ import asyncio
 import logging
 import shlex
 import re
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -33,6 +34,7 @@ class CreateCustomPluginRequest(BaseModel):
     use_cases: list[str] = Field(default_factory=list, description="When to use this plugin")
     capabilities: list[str] = Field(default_factory=list, description="Plugin capabilities for filtering")
     phases: list[str] = Field(default_factory=list, description="Scan phases this plugin supports")
+    plugin_dir: str | None = Field(default=None, description="Plugin directory name under plugins/ or user_plugins/")
     input_type: str = Field(default="url", description="Input type: url, domain, ip, file")
     output_format: str = Field(default="lines", description="Output format: json, lines, regex")
     output_pattern: str | None = Field(default=None, description="Regex pattern for parsing")
@@ -49,6 +51,7 @@ class UpdateCustomPluginRequest(BaseModel):
     use_cases: list[str] | None = None
     capabilities: list[str] | None = None
     phases: list[str] | None = None
+    plugin_dir: str | None = None
     input_type: str | None = None
     output_format: str | None = None
     output_pattern: str | None = None
@@ -74,6 +77,8 @@ class CustomPluginResponse(BaseModel):
     use_cases: list[str]
     capabilities: list[str]
     phases: list[str]
+    plugin_dir: str | None
+    working_dir: str | None
     input_type: str
     output_format: str
     output_pattern: str | None
@@ -87,6 +92,29 @@ class CustomPluginResponse(BaseModel):
 
 
 # ==================== Endpoints ====================
+
+@router.get("/directories")
+async def list_plugin_directories():
+    """List available plugin directories for binding.
+    
+    Scans plugins/ and user_plugins/ for directories that can be
+    associated with custom plugins.
+    """
+    dirs = []
+    for base in [Path("plugins"), Path("user_plugins")]:
+        if base.exists():
+            for d in sorted(base.iterdir()):
+                if d.is_dir() and not d.name.startswith("."):
+                    dirs.append({
+                        "name": d.name,
+                        "path": str(d),
+                        "base": str(base),
+                        "has_manifest": (d / "manifest.yaml").exists(),
+                        "has_bin": (d / "bin").exists(),
+                        "has_plugin_py": (d / "plugin.py").exists(),
+                    })
+    return {"directories": dirs, "total": len(dirs)}
+
 
 @router.get("")
 async def list_custom_plugins(enabled_only: bool = False):
@@ -128,6 +156,7 @@ async def create_custom_plugin(request: CreateCustomPluginRequest):
             use_cases=request.use_cases,
             capabilities=request.capabilities,
             phases=request.phases,
+            plugin_dir=request.plugin_dir,
             input_type=request.input_type,
             output_format=request.output_format,
             output_pattern=request.output_pattern,
@@ -254,17 +283,30 @@ async def test_custom_plugin(plugin_id: str, request: TestPluginRequest):
     # Build command
     command = plugin.command.replace("{target}", request.target)
     
-    logger.info(f"Testing plugin {plugin.name}: {command}")
+    # Resolve working directory
+    cwd = None
+    if plugin.working_dir:
+        cwd = Path(plugin.working_dir)
+    elif plugin.plugin_dir:
+        # Try plugins/ first, then user_plugins/
+        for base in [Path("plugins"), Path("user_plugins")]:
+            candidate = base / plugin.plugin_dir
+            if candidate.exists():
+                cwd = candidate
+                break
+    
+    logger.info(f"Testing plugin {plugin.name}: {command} (cwd={cwd})")
     
     try:
         # Parse command for shell execution
         args = shlex.split(command)
         
-        # Execute command
+        # Execute command with optional cwd
         process = await asyncio.create_subprocess_exec(
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd) if cwd else None,
         )
         
         try:
@@ -278,6 +320,7 @@ async def test_custom_plugin(plugin_id: str, request: TestPluginRequest):
                 "status": "timeout",
                 "message": f"Command timed out after {request.timeout}s",
                 "plugin": plugin.name,
+                "cwd": str(cwd) if cwd else None,
             }
         
         # Parse output based on format
@@ -291,6 +334,7 @@ async def test_custom_plugin(plugin_id: str, request: TestPluginRequest):
             "stderr": stderr.decode("utf-8", errors="replace")[:1000],
             "parsed": parsed,
             "plugin": plugin.name,
+            "cwd": str(cwd) if cwd else None,
         }
         
     except FileNotFoundError:
@@ -298,6 +342,7 @@ async def test_custom_plugin(plugin_id: str, request: TestPluginRequest):
             "status": "error",
             "message": f"Command not found: {args[0] if args else command}",
             "plugin": plugin.name,
+            "cwd": str(cwd) if cwd else None,
         }
     except Exception as e:
         logger.exception(f"Plugin test error: {e}")

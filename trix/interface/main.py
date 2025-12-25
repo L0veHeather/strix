@@ -803,8 +803,8 @@ def _main_impl() -> None:
     if built_in_plugins_dir.exists():
         plugin_manager.load_plugins_from_dir(built_in_plugins_dir)
         
-    # Load user plugins from ~/.strix/plugins
-    user_plugins_dir = Path.home() / ".strix" / "plugins"
+    # Load user plugins from ~/.trix/plugins
+    user_plugins_dir = Path.home() / ".trix" / "plugins"
     if user_plugins_dir.exists():
         plugin_manager.load_plugins_from_dir(user_plugins_dir)
 

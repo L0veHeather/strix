@@ -135,8 +135,12 @@ class PluginRegistry:
         return self._plugins.get(plugin_name)
     
     def list_plugins(self) -> list[dict[str, Any]]:
-        """List all loaded plugins with their info."""
+        """List all loaded plugins with their info as dicts."""
         return [plugin.to_dict() for plugin in self._plugins.values()]
+    
+    def get_loaded_plugins(self) -> list[BasePlugin]:
+        """Get all loaded plugin objects."""
+        return list(self._plugins.values())
     
     def list_available_plugins(self) -> list[str]:
         """List all available (discoverable) plugins."""

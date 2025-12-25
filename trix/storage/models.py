@@ -313,6 +313,7 @@ class CustomPlugin(Base):
     # Execution
     command = Column(Text, nullable=False)  # Command template with {target} placeholder
     working_dir = Column(String(512))       # Optional working directory
+    plugin_dir = Column(String(100))        # Plugin directory name (in plugins/ or user_plugins/)
     
     # Description for LLM
     description = Column(Text, nullable=False)  # What this plugin does
@@ -345,6 +346,7 @@ class CustomPlugin(Base):
             "name": self.name,
             "command": self.command,
             "working_dir": self.working_dir,
+            "plugin_dir": self.plugin_dir,
             "description": self.description,
             "use_cases": self.use_cases or [],
             "input_type": self.input_type,

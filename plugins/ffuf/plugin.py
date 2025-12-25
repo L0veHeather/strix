@@ -28,10 +28,11 @@ logger = logging.getLogger(__name__)
 
 # Common wordlist locations
 DEFAULT_WORDLISTS = [
+    Path.home() / ".trix" / "wordlists" / "common.txt",
     "/usr/share/wordlists/dirb/common.txt",
     "/usr/share/seclists/Discovery/Web-Content/common.txt",
     "/opt/homebrew/share/seclists/Discovery/Web-Content/common.txt",
-    Path.home() / ".strix" / "wordlists" / "common.txt",
+    "/usr/share/wordlists/dirbuster/directory-list-2.3-medium.txt",
 ]
 
 
@@ -108,7 +109,7 @@ class FfufPlugin(BasePlugin):
     
     async def _ensure_wordlist(self) -> None:
         """Ensure a default wordlist exists."""
-        wordlist_dir = Path.home() / ".strix" / "wordlists"
+        wordlist_dir = Path.home() / ".trix" / "wordlists"
         wordlist_path = wordlist_dir / "common.txt"
         
         if wordlist_path.exists():
@@ -153,8 +154,8 @@ class FfufPlugin(BasePlugin):
         
         return None
     
-    def _find_wordlist(self, wordlist: str | None) -> str:
-        """Find a valid wordlist path."""
+    def _find_wordlist(self, wordlist: str | None) -> str | None:
+        """Find a valid wordlist path. Returns None if not found."""
         if wordlist and Path(wordlist).exists():
             return wordlist
         
@@ -162,7 +163,8 @@ class FfufPlugin(BasePlugin):
             if Path(wl).exists():
                 return str(wl)
         
-        raise RuntimeError("No wordlist found. Please specify a wordlist path.")
+        # Return None instead of raising - will be handled gracefully in execute()
+        return None
     
     def build_command(self, params: dict[str, Any]) -> list[str]:
         """Build ffuf command line."""
@@ -182,6 +184,8 @@ class FfufPlugin(BasePlugin):
         
         # Wordlist
         wordlist = self._find_wordlist(params.get("wordlist"))
+        if not wordlist:
+            raise RuntimeError("No wordlist found. Please install SecLists or specify a wordlist path.")
         cmd.extend(["-w", wordlist])
         
         # Method
