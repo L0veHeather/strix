@@ -289,9 +289,34 @@ class ScanEngine:
                     progress=state.progress,
                 )
                 
-                # Collect findings
+                # Collect findings in memory
                 collector.add_findings(result.findings)
                 collector.mark_phase_completed(result.phase)
+                
+                # Save phase result to database
+                db.save_phase_result(
+                    scan_id=scan_id,
+                    phase=result.phase.value,
+                    status=result.status.value,
+                    duration_ms=result.duration_ms,
+                    plugins_executed=result.plugins_executed,
+                    findings_count=len(result.findings),
+                    errors=result.errors,
+                )
+                
+                # Save each finding to database
+                for finding in result.findings:
+                    db.add_vulnerability(
+                        scan_id=scan_id,
+                        title=finding.title,
+                        severity=finding.severity,
+                        description=finding.description,
+                        url=finding.url,
+                        plugin_name=finding.plugin_name,
+                        cve_id=getattr(finding, 'cve_id', None),
+                        evidence=getattr(finding, 'evidence', None),
+                        phase=result.phase.value,
+                    )
                 
                 # Check for cancellation
                 if state.status == ScanStatus.CANCELLED:
