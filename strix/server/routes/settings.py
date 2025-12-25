@@ -107,8 +107,8 @@ LLM_PROVIDERS = [
         "id": "deepseek",
         "name": "DeepSeek",
         "models": [
-            {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "description": "General purpose"},
-            {"id": "deepseek/deepseek-coder", "name": "DeepSeek Coder", "description": "Coding focused"},
+            {"id": "deepseek/deepseek-chat", "name": "DeepSeek Chat", "description": "General purpose chat"},
+            {"id": "deepseek/deepseek-reasoner", "name": "DeepSeek Reasoner", "description": "Reasoning model (R1)"},
         ],
         "requires_key": True,
         "key_env": "DEEPSEEK_API_KEY",

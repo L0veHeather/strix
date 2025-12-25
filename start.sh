@@ -95,44 +95,31 @@ check_optional_tools() {
 setup_python_env() {
     log_info "Setting up Python environment..."
     
-    if [ ! -d ".venv" ]; then
-        log_info "Creating virtual environment..."
-        python3 -m venv .venv
+    # Use Python 3.12 if available, otherwise use system python3
+    PYTHON_BIN=""
+    if command -v /opt/homebrew/bin/python3.12 &> /dev/null; then
+        PYTHON_BIN="/opt/homebrew/bin/python3.12"
+    elif command -v python3.12 &> /dev/null; then
+        PYTHON_BIN="python3.12"
+    else
+        PYTHON_BIN="python3"
     fi
     
-    source .venv/bin/activate
+    log_info "Using Python: $($PYTHON_BIN --version)"
     
-    # Upgrade pip
-    pip install --upgrade pip -q
+    # Create venv if not exists or if it's using wrong Python version
+    if [ ! -d ".venv" ] || [ ! -f ".venv/bin/python" ]; then
+        log_info "Creating virtual environment..."
+        $PYTHON_BIN -m venv .venv
+    fi
     
     # Install core dependencies
     log_info "Installing Python dependencies..."
-    pip install -q \
-        fastapi \
-        uvicorn \
-        httpx \
-        litellm \
-        openai \
-        pydantic \
-        rich \
-        textual \
-        docker \
-        pyyaml \
-        requests \
-        tenacity \
-        playwright \
-        xmltodict \
-        jinja2 \
-        aiofiles \
-        websockets \
-        2>/dev/null || true
-    
-    # Install package in development mode if possible
-    pip install -q -e . 2>/dev/null || true
-    
-    # Install GUI dependencies (optional)
-    log_info "Installing GUI dependencies (optional)..."
-    pip install -q PyQt6 markdown 2>/dev/null || log_warn "PyQt6 installation skipped (optional)"
+    .venv/bin/pip install --upgrade pip -q
+    .venv/bin/pip install --timeout 60 -q \
+        fastapi uvicorn pydantic httpx litellm sqlalchemy \
+        pyyaml rich textual requests aiofiles websockets \
+        2>/dev/null || log_warn "Some optional deps may have failed"
     
     log_info "Python dependencies installed."
 }
@@ -150,23 +137,22 @@ setup_frontend() {
 start_backend() {
     log_info "Starting backend server on port 8000..."
     
-    source .venv/bin/activate
-    
     # Kill existing server if running
     pkill -f "uvicorn strix.server.app:app" 2>/dev/null || true
     
-    # Start server in background
+    # Start server in background using venv
     cd "$SCRIPT_DIR"
-    nohup python -m uvicorn strix.server.app:app --host 0.0.0.0 --port 8000 > logs/backend.log 2>&1 &
+    mkdir -p logs
+    nohup .venv/bin/python -m uvicorn strix.server.app:app --host 0.0.0.0 --port 8000 > logs/backend.log 2>&1 &
     echo $! > .backend.pid
     
     # Wait for server to start
-    sleep 2
+    sleep 3
     
     if curl -s http://localhost:8000/health > /dev/null 2>&1; then
         log_info "Backend server started successfully."
     else
-        log_warn "Backend may still be starting..."
+        log_warn "Backend may still be starting... Check logs/backend.log for details."
     fi
 }
 

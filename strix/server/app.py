@@ -64,20 +64,18 @@ async def lifespan(app: FastAPI):
     db = get_database()
     logger.info(f"Database ready at {db.db_path}")
     
-    # Initialize plugin registry
-    registry = get_plugin_registry()
-    await registry.load_plugins()
-    logger.info(f"Loaded {len(registry.list_plugins())} plugins")
+    # Initialize plugin registry (don't fail if plugins can't load)
+    try:
+        registry = get_plugin_registry()
+        await registry.initialize()
+        logger.info(f"Loaded {len(registry.list_plugins())} plugins")
+    except Exception as e:
+        logger.warning(f"Plugin initialization failed: {e}")
     
     yield
     
     # Shutdown
     logger.info("Shutting down Strix server...")
-    
-    # Stop any running scans
-    engine = get_scan_engine()
-    for scan_id in list(engine._active_scans.keys()):
-        await engine.stop_scan(scan_id)
 
 
 def create_app() -> FastAPI:
@@ -113,7 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(scans.router, prefix="/api/scans", tags=["scans"])
     app.include_router(plugins.router, prefix="/api/plugins", tags=["plugins"])
     app.include_router(results.router, prefix="/api/results", tags=["results"])
-    app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+    app.include_router(settings.router, prefix="/api", tags=["settings"])
     app.include_router(websocket.router, prefix="/ws", tags=["websocket"])
     
     # Health check

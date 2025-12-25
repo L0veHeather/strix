@@ -89,15 +89,70 @@ export default function SettingsPage() {
       setTimeoutValue(config.timeout || 600);
       setEnableCaching(config.enable_caching ?? true);
       if (config.api_base) setApiBase(config.api_base);
-      
+
       // Determine provider from model
       const provider = config.model?.split("/")[0] || "openai";
       setSelectedProvider(provider);
     }
   }, [llmConfigData]);
 
-  const providers = providersData?.providers || [];
-  const currentProvider = providers.find((p) => p.id === selectedProvider);
+  // Default providers as fallback when API is not available
+  const DEFAULT_PROVIDERS = [
+    {
+      id: "openai",
+      name: "OpenAI",
+      models: [
+        { id: "openai/gpt-4o", name: "GPT-4o", description: "Most capable model" },
+        { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and efficient" },
+        { id: "openai/o1-preview", name: "o1 Preview", description: "Reasoning model" },
+      ],
+      requires_key: true,
+      key_env: "OPENAI_API_KEY",
+    },
+    {
+      id: "anthropic",
+      name: "Anthropic",
+      models: [
+        { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", description: "Latest Sonnet" },
+        { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "Balanced" },
+        { id: "anthropic/claude-3-opus-20240229", name: "Claude 3 Opus", description: "Most capable" },
+      ],
+      requires_key: true,
+      key_env: "ANTHROPIC_API_KEY",
+    },
+    {
+      id: "deepseek",
+      name: "DeepSeek",
+      models: [
+        { id: "deepseek/deepseek-chat", name: "DeepSeek Chat", description: "General purpose chat" },
+        { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner", description: "Reasoning model (R1)" },
+      ],
+      requires_key: true,
+      key_env: "DEEPSEEK_API_KEY",
+    },
+    {
+      id: "ollama",
+      name: "Ollama (Local)",
+      models: [
+        { id: "ollama/llama3.3:70b", name: "Llama 3.3 70B", description: "Large local model" },
+        { id: "ollama/llama3.2:latest", name: "Llama 3.2", description: "Fast local model" },
+        { id: "ollama/qwen2.5:32b", name: "Qwen 2.5 32B", description: "Chinese + English" },
+        { id: "ollama/deepseek-r1:14b", name: "DeepSeek R1 14B", description: "Reasoning (local)" },
+      ],
+      requires_key: false,
+      default_base: "http://localhost:11434",
+    },
+    {
+      id: "custom",
+      name: "Custom",
+      models: [],
+      requires_key: true,
+      supports_custom_base: true,
+    },
+  ];
+
+  const providers = (providersData?.providers && providersData.providers.length > 0) ? providersData.providers : DEFAULT_PROVIDERS;
+  const currentProvider = providers.find((p: any) => p.id === selectedProvider);
   const configuredProviders = llmConfigData?.configured_providers || {};
 
   const handleSave = () => {
@@ -202,14 +257,14 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* API Key */}
-          {currentProvider?.requires_key && (
-            <div className="space-y-2">
+          {/* API Key - Always show for supported providers */}
+          {(currentProvider?.requires_key || selectedProvider !== "ollama") && (
+            <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
               <label className="text-sm font-medium flex items-center gap-2">
                 <Key className="h-4 w-4" />
-                API Key
+                API Key for {currentProvider?.name || selectedProvider}
                 {configuredProviders[selectedProvider] && (
-                  <Badge variant="secondary" className="ml-2">Configured</Badge>
+                  <Badge variant="secondary" className="ml-2 bg-green-500/20 text-green-600">✓ Configured</Badge>
                 )}
               </label>
               <div className="flex gap-2">
@@ -220,10 +275,10 @@ export default function SettingsPage() {
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder={
                       configuredProviders[selectedProvider]
-                        ? "••••••••••••••••"
-                        : `Enter ${currentProvider.name} API key`
+                        ? "Enter new key to update..."
+                        : `Enter your ${currentProvider?.name || selectedProvider} API key`
                     }
-                    className="pr-10"
+                    className="pr-10 font-mono text-sm"
                   />
                   <Button
                     type="button"
@@ -236,11 +291,45 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               </div>
-              {currentProvider.key_env && (
-                <p className="text-xs text-muted-foreground">
-                  Or set environment variable: <code className="bg-muted px-1 rounded">{currentProvider.key_env}</code>
-                </p>
-              )}
+
+              {/* LiteLLM Provider-specific instructions */}
+              <div className="text-xs space-y-2 p-3 bg-background/50 rounded border border-dashed">
+                <p className="font-medium text-foreground">LiteLLM Configuration:</p>
+                {selectedProvider === "openai" && (
+                  <>
+                    <p>• Environment: <code className="bg-muted px-1 rounded">OPENAI_API_KEY</code></p>
+                    <p>• Model format: <code className="bg-muted px-1 rounded">openai/gpt-4o</code>, <code className="bg-muted px-1 rounded">openai/gpt-4o-mini</code></p>
+                    <p className="text-muted-foreground">Get key: https://platform.openai.com/api-keys</p>
+                  </>
+                )}
+                {selectedProvider === "anthropic" && (
+                  <>
+                    <p>• Environment: <code className="bg-muted px-1 rounded">ANTHROPIC_API_KEY</code></p>
+                    <p>• Model format: <code className="bg-muted px-1 rounded">anthropic/claude-3-5-sonnet-20241022</code></p>
+                    <p className="text-muted-foreground">Get key: https://console.anthropic.com/settings/keys</p>
+                  </>
+                )}
+                {selectedProvider === "deepseek" && (
+                  <>
+                    <p>• Environment: <code className="bg-muted px-1 rounded">DEEPSEEK_API_KEY</code></p>
+                    <p>• Model format: <code className="bg-muted px-1 rounded">deepseek/deepseek-chat</code>, <code className="bg-muted px-1 rounded">deepseek/deepseek-reasoner</code></p>
+                    <p className="text-muted-foreground">Get key: https://platform.deepseek.com/api_keys</p>
+                  </>
+                )}
+                {selectedProvider === "ollama" && (
+                  <>
+                    <p>• No API key needed (local)</p>
+                    <p>• Model format: <code className="bg-muted px-1 rounded">ollama/llama3.2</code>, <code className="bg-muted px-1 rounded">ollama/qwen2.5</code></p>
+                    <p className="text-muted-foreground">Ensure Ollama is running: ollama serve</p>
+                  </>
+                )}
+                {selectedProvider === "custom" && (
+                  <>
+                    <p>• Set API key and base URL below</p>
+                    <p>• Model format: <code className="bg-muted px-1 rounded">provider/model-name</code></p>
+                  </>
+                )}
+              </div>
             </div>
           )}
 
@@ -262,7 +351,7 @@ export default function SettingsPage() {
           {/* Advanced Settings */}
           <div className="space-y-4 pt-4 border-t">
             <h4 className="text-sm font-medium">Advanced</h4>
-            
+
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm">Timeout (seconds)</label>
@@ -274,7 +363,7 @@ export default function SettingsPage() {
                   max={3600}
                 />
               </div>
-              
+
               <div className="flex items-center justify-between p-3 rounded-lg border">
                 <div>
                   <p className="text-sm font-medium">Prompt Caching</p>

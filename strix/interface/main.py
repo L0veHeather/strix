@@ -16,7 +16,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from docker.errors import DockerException
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
@@ -27,21 +26,11 @@ from strix.interface.utils import (
     assign_workspace_subdirs,
     build_llm_stats_text,
     build_stats_text,
-    check_docker_connection,
     clone_repository,
     collect_local_sources,
     generate_run_name,
-    image_exists,
     infer_target_type,
-    process_pull_line,
     validate_llm_response,
-)
-from strix.runtime.docker_runtime import (
-    STRIX_IMAGE,
-    STRIX_IMAGE_LOCAL,
-    STRIX_IMAGE_REMOTE,
-    STRIX_IS_DEV_INSTALL,
-    STRIX_PROJECT_ROOT,
 )
 from strix.scope import (
     ScopeParseError,
@@ -178,27 +167,7 @@ def validate_environment() -> None:  # noqa: PLR0912, PLR0915
         sys.exit(1)
 
 
-def check_docker_installed() -> None:
-    if shutil.which("docker") is None:
-        console = Console()
-        error_text = Text()
-        error_text.append("❌ ", style="bold red")
-        error_text.append("DOCKER NOT INSTALLED", style="bold red")
-        error_text.append("\n\n", style="white")
-        error_text.append("The 'docker' CLI was not found in your PATH.\n", style="white")
-        error_text.append(
-            "Please install Docker and ensure the 'docker' command is available.\n\n", style="white"
-        )
 
-        panel = Panel(
-            error_text,
-            title="[bold red]🛡️  STRIX STARTUP ERROR",
-            title_align="center",
-            border_style="red",
-            padding=(1, 2),
-        )
-        console.print("\n", panel, "\n")
-        sys.exit(1)
 
 
 
@@ -696,123 +665,6 @@ def display_completion_message(args: argparse.Namespace, results_path: Path) -> 
     console.print()
 
 
-def pull_docker_image() -> None:
-    """Preflight check for Docker image availability.
-    
-    Resolution order:
-    1. Check if STRIX_IMAGE (configured image) exists locally → use it
-    2. If local tag exists → use it (offline mode)
-    3. If dev install (source code): FAIL-FAST, prompt user to build locally
-    4. If PyPI install: check remote exists locally → tag as local
-    5. If PyPI install: pull remote image → tag as local → use
-    6. Fail-fast if none available
-    """
-    console = Console()
-    client = check_docker_connection()
-
-    # Check 1: Configured image exists
-    if image_exists(client, STRIX_IMAGE):
-        logger.info(f"Using Docker image: {STRIX_IMAGE}")
-        return
-
-    # Check 2: Local tag exists (offline mode)
-    if STRIX_IMAGE != STRIX_IMAGE_LOCAL and image_exists(client, STRIX_IMAGE_LOCAL):
-        logger.info(f"Using local Docker image: {STRIX_IMAGE_LOCAL}")
-        # Update the module-level variable to use local
-        import strix.runtime.docker_runtime as runtime_module
-        runtime_module.STRIX_IMAGE = STRIX_IMAGE_LOCAL
-        return
-
-    # Check 3: Dev install - require local build, don't pull remote
-    # (remote image may not match local code)
-    if STRIX_IS_DEV_INSTALL:
-        error_text = Text()
-        error_text.append("❌ ", style="bold red")
-        error_text.append("SANDBOX IMAGE NOT FOUND (Development Install)", style="bold red")
-        error_text.append("\n\n", style="white")
-        error_text.append("You are running from source code, but the sandbox image is not built.\n", style="white")
-        error_text.append("The remote image may not match your local code changes.\n\n", style="yellow")
-        error_text.append("To build the sandbox image locally:\n", style="white")
-        error_text.append("  make build-sandbox\n\n", style="bold cyan")
-        error_text.append("Or for development with hot-reload (no rebuild needed):\n", style="white")
-        error_text.append("  STRIX_DEV_MODE=true strix --target <url>\n\n", style="bold cyan")
-        if STRIX_PROJECT_ROOT:
-            error_text.append(f"Project root: {STRIX_PROJECT_ROOT}\n", style="dim white")
-
-        panel = Panel(
-            error_text,
-            title="[bold red]🛡️  PREFLIGHT FAILED: Local Build Required",
-            title_align="center",
-            border_style="red",
-            padding=(1, 2),
-        )
-        console.print("\n", panel, "\n")
-        sys.exit(1)
-
-    # Check 4: Remote image exists locally, tag it (PyPI install only)
-    if image_exists(client, STRIX_IMAGE_REMOTE):
-        console.print(f"[bold cyan]🏷️  Tagging image as local:[/] {STRIX_IMAGE_LOCAL}")
-        try:
-            img = client.images.get(STRIX_IMAGE_REMOTE)
-            img.tag(STRIX_IMAGE_LOCAL.split(":")[0], STRIX_IMAGE_LOCAL.split(":")[1])
-            import strix.runtime.docker_runtime as runtime_module
-            runtime_module.STRIX_IMAGE = STRIX_IMAGE_LOCAL
-            console.print("[green]✅ Local tag created[/]")
-            return
-        except DockerException as e:
-            logger.warning(f"Failed to tag image: {e}")
-
-    # Check 5: Pull from remote (PyPI install only)
-    console.print()
-    console.print(f"[bold cyan]🐳 Pulling Docker image:[/] {STRIX_IMAGE_REMOTE}")
-    console.print("[dim yellow]This only happens on first run and may take a few minutes...[/]")
-    console.print()
-
-    with console.status("[bold cyan]Downloading image layers...", spinner="dots") as status:
-        try:
-            layers_info: dict[str, str] = {}
-            last_update = ""
-
-            for line in client.api.pull(STRIX_IMAGE_REMOTE, stream=True, decode=True):
-                last_update = process_pull_line(line, layers_info, status, last_update)
-
-            # Tag as local for future offline use
-            img = client.images.get(STRIX_IMAGE_REMOTE)
-            img.tag(STRIX_IMAGE_LOCAL.split(":")[0], STRIX_IMAGE_LOCAL.split(":")[1])
-            import strix.runtime.docker_runtime as runtime_module
-            runtime_module.STRIX_IMAGE = STRIX_IMAGE_LOCAL
-
-        except DockerException as e:
-            console.print()
-            error_text = Text()
-            error_text.append("❌ ", style="bold red")
-            error_text.append("SANDBOX IMAGE NOT AVAILABLE", style="bold red")
-            error_text.append("\n\n", style="white")
-            error_text.append(f"Could not find or download: {STRIX_IMAGE_REMOTE}\n\n", style="white")
-            error_text.append("To fix this, run:\n", style="yellow")
-            error_text.append("  ./scripts/setup-local-image.sh\n\n", style="bold white")
-            error_text.append("Or manually:\n", style="yellow")
-            error_text.append(f"  docker pull {STRIX_IMAGE_REMOTE}\n", style="dim white")
-            error_text.append(f"  docker tag {STRIX_IMAGE_REMOTE} {STRIX_IMAGE_LOCAL}\n", style="dim white")
-            error_text.append(f"\nError: {e}", style="dim red")
-
-            panel = Panel(
-                error_text,
-                title="[bold red]🛡️  PREFLIGHT FAILED: Docker Image",
-                title_align="center",
-                border_style="red",
-                padding=(1, 2),
-            )
-            console.print(panel, "\n")
-            sys.exit(1)
-
-    success_text = Text()
-    success_text.append("✅ ", style="bold green")
-    success_text.append("Docker image ready (tagged as local for offline use)", style="green")
-    console.print(success_text)
-    console.print()
-
-
 def _run_scope_validation(args: argparse.Namespace) -> None:
     """Run scope validation and display results."""
     console = Console()
@@ -939,9 +791,7 @@ def _main_impl() -> None:
         _run_scope_validation(args)
         return
 
-    check_docker_installed()
-    pull_docker_image()
-
+    # Removed Docker checks - running without sandbox
     validate_environment()
     asyncio.run(warm_up_llm())
 
