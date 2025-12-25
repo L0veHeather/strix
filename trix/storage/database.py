@@ -335,12 +335,14 @@ class Database:
             session.refresh(result)
             return result
     
-    def get_phase_results(self, scan_id: str) -> list[PhaseResult]:
-        """Get all phase results for a scan."""
+    def get_phase_results(self, scan_id: str) -> list[dict]:
+        """Get all phase results for a scan as dictionaries."""
         with self.session() as session:
-            return session.query(PhaseResult).filter(
+            results = session.query(PhaseResult).filter(
                 PhaseResult.scan_id == scan_id
             ).all()
+            # Convert to dict inside session to avoid DetachedInstanceError
+            return [r.to_dict() for r in results]
     
     # ==================== Plugin Config Operations ====================
     

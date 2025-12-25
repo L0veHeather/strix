@@ -197,7 +197,7 @@ async def get_scan_status(scan_id: str):
         "status": scan.status.value if scan.status else "unknown",
         "current_phase": scan.current_phase,
         "progress": scan.progress or 0,
-        "phases": [pr.to_dict() for pr in phase_results],
+        "phases": phase_results,  # Already dicts from database
         "vulnerabilities": vuln_stats,
         "is_active": scan_id in engine._tasks,
     }
