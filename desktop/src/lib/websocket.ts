@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useStrixStore, useSettingsStore } from "./store";
+import { useTrixStore, useSettingsStore } from "./store";
 
 type MessageHandler = (data: unknown) => void;
 
@@ -31,7 +31,7 @@ class WebSocketManager {
 
       this.ws.onopen = () => {
         console.log("WebSocket connected");
-        useStrixStore.getState().setWsConnected(true);
+        useTrixStore.getState().setWsConnected(true);
         this.reconnectAttempts = 0;
 
         // Resubscribe to all scans
@@ -42,7 +42,7 @@ class WebSocketManager {
 
       this.ws.onclose = () => {
         console.log("WebSocket disconnected");
-        useStrixStore.getState().setWsConnected(false);
+        useTrixStore.getState().setWsConnected(false);
         this.attemptReconnect();
       };
 
@@ -79,7 +79,7 @@ class WebSocketManager {
 
   private handleMessage(message: WebSocketMessage) {
     const { type, data } = message;
-    const store = useStrixStore.getState();
+    const store = useTrixStore.getState();
 
     // Call registered handlers
     const handlers = this.messageHandlers.get(type);

@@ -1,6 +1,6 @@
 # tests/mock_target.py
 """
-模拟靶场服务器 - 用于测试 Strix 漏洞检测能力
+模拟靶场服务器 - 用于测试 Trix 漏洞检测能力
 
 提供以下漏洞端点:
 1. /vuln/sqli - Time-based SQL 注入
@@ -18,8 +18,8 @@ from fastapi import FastAPI, Request, Response
 import time
 
 app = FastAPI(
-    title="Strix Mock Target",
-    description="模拟靶场，用于测试 Strix AI 漏洞扫描器",
+    title="Trix Mock Target",
+    description="模拟靶场，用于测试 Trix AI 漏洞扫描器",
     version="1.0.0"
 )
 
@@ -87,7 +87,7 @@ def health():
 @app.get("/")
 def index():
     return {
-        "name": "Strix Mock Target",
+        "name": "Trix Mock Target",
         "endpoints": [
             {"path": "/vuln/sqli?id=<payload>", "vuln": "Time-based SQLi"},
             {"path": "/vuln/sqli-error?id=<payload>", "vuln": "Error-based SQLi"},

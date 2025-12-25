@@ -2,7 +2,7 @@
 
 import pytest
 
-from strix.core.tci import (
+from trix.core.tci import (
     AUTH_COMPLEXITY_SCORES,
     HIGH_RISK_PORTS,
     ComplexityLevel,

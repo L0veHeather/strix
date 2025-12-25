@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from strix.plugins.base import (
+from trix.plugins.base import (
     BasePlugin,
     PluginResult,
     VulnerabilityFinding,
@@ -181,15 +181,21 @@ class KatanaPlugin(BasePlugin):
     
     async def execute(
         self,
+        target: str,
+        phase: ScanPhase,
         params: dict[str, Any],
     ) -> AsyncGenerator[PluginEvent, None]:
         """Execute katana crawling."""
+        from trix.plugins.base import EventType as PluginEventType
+        
+        if "target" not in params:
+            params["target"] = target
+        
         try:
             cmd = self.build_command(params)
-            target = params.get("target", params.get("target_list", "unknown"))
             
             yield PluginEvent(
-                type="started",
+                event_type=PluginEventType.STARTED,
                 message=f"Starting katana crawl on {target}",
                 data={"command": " ".join(cmd)},
             )
@@ -226,7 +232,7 @@ class KatanaPlugin(BasePlugin):
                             forms.append(result)
                         
                         yield PluginEvent(
-                            type="result",
+                            event_type=PluginEventType.OUTPUT,
                             message=f"Discovered: {url}",
                             data=result,
                         )
@@ -234,7 +240,7 @@ class KatanaPlugin(BasePlugin):
             await process.wait()
             
             yield PluginEvent(
-                type="completed",
+                event_type=PluginEventType.COMPLETED,
                 message=f"Katana completed. Found {len(urls_found)} URLs.",
                 data={
                     "urls_count": len(urls_found),
@@ -248,7 +254,7 @@ class KatanaPlugin(BasePlugin):
         except Exception as e:
             logger.exception(f"Katana execution error: {e}")
             yield PluginEvent(
-                type="error",
+                event_type=PluginEventType.ERROR,
                 message=str(e),
                 data={"error": str(e)},
             )

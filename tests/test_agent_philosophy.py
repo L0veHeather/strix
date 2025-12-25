@@ -6,7 +6,7 @@ These tests verify that the Agent Philosophy principles are correctly enforced.
 import pytest
 from datetime import datetime, UTC
 
-from strix.core.agent_philosophy import (
+from trix.core.agent_philosophy import (
     IntendedAction,
     ActionType,
     VulnHypothesis,
@@ -412,7 +412,7 @@ class TestVulnerabilityStatus:
     
     def test_not_confirmed_by_default(self):
         """Vulnerability should not be confirmed by default."""
-        from strix.core.agent_philosophy import VulnerabilityStatus
+        from trix.core.agent_philosophy import VulnerabilityStatus
         
         vuln = VulnerabilityStatus(
             status="suspected",
@@ -424,7 +424,7 @@ class TestVulnerabilityStatus:
     
     def test_confirmation_requirements(self):
         """Should require all conditions for confirmation."""
-        from strix.core.agent_philosophy import VulnerabilityStatus
+        from trix.core.agent_philosophy import VulnerabilityStatus
         
         vuln = VulnerabilityStatus(
             status="confirmed",
@@ -439,7 +439,7 @@ class TestVulnerabilityStatus:
     
     def test_high_false_positive_blocks_confirmation(self):
         """High false positive probability should block confirmation."""
-        from strix.core.agent_philosophy import VulnerabilityStatus
+        from trix.core.agent_philosophy import VulnerabilityStatus
         
         vuln = VulnerabilityStatus(
             status="confirmed",

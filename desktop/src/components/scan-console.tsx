@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useStrixStore, ConsoleLogEntry } from "@/lib/store";
+import { useTrixStore, ConsoleLogEntry } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import {
@@ -32,8 +32,8 @@ export function ScanConsole({
   const [filter, setFilter] = useState<LogFilter>("all");
   const [shouldAutoScroll, setShouldAutoScroll] = useState(autoScroll);
   
-  const logs = useStrixStore((state) => state.consoleLogs.get(scanId) || []);
-  const clearLogs = useStrixStore((state) => state.clearConsoleLogs);
+  const logs = useTrixStore((state) => state.consoleLogs.get(scanId) || []);
+  const clearLogs = useTrixStore((state) => state.clearConsoleLogs);
 
   // Auto-scroll to bottom when new logs arrive
   useEffect(() => {
@@ -218,7 +218,7 @@ export function ScanConsole({
 
 // Compact inline version for the scan page
 export function ScanConsoleInline({ scanId }: { scanId: string }) {
-  const logs = useStrixStore((state) => state.consoleLogs.get(scanId) || []);
+  const logs = useTrixStore((state) => state.consoleLogs.get(scanId) || []);
   const lastLogs = logs.slice(-5);
 
   return (

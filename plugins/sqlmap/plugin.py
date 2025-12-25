@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from strix.plugins.base import (
+from trix.plugins.base import (
     BasePlugin,
     PluginResult,
     VulnerabilityFinding,
@@ -238,15 +238,22 @@ class SqlmapPlugin(BasePlugin):
     
     async def execute(
         self,
+        target: str,
+        phase: ScanPhase,
         params: dict[str, Any],
     ) -> AsyncGenerator[PluginEvent, None]:
         """Execute sqlmap scan."""
+        from trix.plugins.base import EventType as PluginEventType
+        
+        if "url" not in params:
+            params["url"] = target
+        
         try:
             cmd = self.build_command(params)
-            url = params.get("url", params.get("request_file", "unknown"))
+            url = params.get("url", target)
             
             yield PluginEvent(
-                type="started",
+                event_type=PluginEventType.STARTED,
                 message=f"Starting sqlmap scan on {url}",
                 data={"command": " ".join(cmd)},
             )
@@ -315,16 +322,15 @@ class SqlmapPlugin(BasePlugin):
                     findings.append(finding)
                     
                     yield PluginEvent(
-                        type="finding",
+                        event_type=PluginEventType.VULNERABILITY,
                         message=f"SQL Injection found: {param}",
-                        data=finding.__dict__,
-                        finding=finding,
+                        data=finding.to_dict(),
                     )
                 
                 # Progress updates
                 if "[INFO]" in line or "[WARNING]" in line:
                     yield PluginEvent(
-                        type="progress",
+                        event_type=PluginEventType.PROGRESS,
                         message=line,
                         data={"raw": line},
                     )
@@ -332,7 +338,7 @@ class SqlmapPlugin(BasePlugin):
             await process.wait()
             
             yield PluginEvent(
-                type="completed",
+                event_type=PluginEventType.COMPLETED,
                 message=f"Sqlmap completed. Found {len(findings)} SQL injection(s).",
                 data={
                     "findings_count": len(findings),
@@ -344,7 +350,7 @@ class SqlmapPlugin(BasePlugin):
         except Exception as e:
             logger.exception(f"Sqlmap execution error: {e}")
             yield PluginEvent(
-                type="error",
+                event_type=PluginEventType.ERROR,
                 message=str(e),
                 data={"error": str(e)},
             )

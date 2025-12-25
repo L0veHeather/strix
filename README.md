@@ -1,331 +1,127 @@
-# 🦉 Strix v2: Human-Controlled Security Scanner
+# 🐯trix (Tiger-Strix)
 
-[English](README.md) | [中文](README_ZH.md) | [**📖 v2 设计哲学**](docs/strix-v2-philosophy.md)
+> **Next-Generation Deterministic & Plugin-Based DAST Engine**
 
-> ⚠️ **Architecture Change**: Strix v2 has been fundamentally redesigned.
-> - ❌ **Removed**: Agent loops, Docker/Sandbox, LLM-controlled flow, CLI/TUI
-> - ✅ **Added**: Server + Engine + Plugin architecture with human control
+🐯trix is a complete evolution of the original Strix security agent. We have abandoned uncontrollable agent loops and heavy Docker dependencies to build a **stable, fast, and infinitely extensible** modern security scanning platform.
 
-**Strix v2** is an open-source, plugin-based security scanning system. Unlike v1's autonomous agent approach, v2 puts **humans in control** while leveraging security tools for comprehensive vulnerability detection.
-
-## 🚀 Quick Start
-
-```bash
-# Clone repository
-git clone https://github.com/your-org/strix.git
-cd strix
-
-# One-click launch (backend + web UI)
-./start.sh
-
-# Or run server directly
-uvicorn strix.server.app:app --host 0.0.0.0 --port 8000
-
-# Frontend (separate terminal)
-cd desktop && pnpm dev
-```
-
-**Access:**
-- 🌐 Web UI: http://localhost:5173
-- 📡 API: http://localhost:8000
-- 📖 API Docs: http://localhost:8000/docs
+![License](https://img.shields.io/badge/license-Apache%202.0-blue)
+![Python](https://img.shields.io/badge/python-3.10+-yellow)
+![Frontend](https://img.shields.io/badge/frontend-React%20%7C%20Tauri-cyan)
 
 ---
 
-## 🏗️ Architecture
+## 🚀 Core Philosophy: Why 🐯trix?
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Desktop UI (React + Tauri)                  │
-├─────────────────────────────────────────────────────────────────┤
-│                     FastAPI Server (REST + WS)                  │
-├─────────────────────────────────────────────────────────────────┤
-│                         Scan Engine                             │
-│    ┌──────────────┬──────────────┬──────────────────────┐      │
-│    │  Event Bus   │Phase Manager │ Result Collector     │      │
-│    └──────────────┴──────────────┴──────────────────────┘      │
-├─────────────────────────────────────────────────────────────────┤
-│                      Plugin Registry                            │
-│    ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐ ┌────────┐     │
-│    │ Nuclei │ │ HTTPX  │ │  ffuf  │ │ Katana │ │ SQLMap │     │
-│    └────────┘ └────────┘ └────────┘ └────────┘ └────────┘     │
-├─────────────────────────────────────────────────────────────────┤
-│                      SQLite Storage                             │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Key Components
-
-| Component | Description |
-|-----------|-------------|
-| **Server** | FastAPI backend with REST API and WebSocket for real-time updates |
-| **Engine** | ScanEngine orchestrates phases, EventBus distributes events |
-| **Plugins** | Security tools (Nuclei, httpx, ffuf, katana, sqlmap) |
-| **Storage** | SQLite database for scans, findings, and configurations |
-| **Desktop** | Tauri + React frontend for visual scan management |
+| Feature | 🐯trix (New Architecture) | Traditional Autonamous Agents |
+|---------|---------------------------|-------------------------------|
+| **Stability** | ✅ **100% Deterministic** State Machine | ❌ Prone to infinite loops & non-reproducible results |
+| **Runtime** | ✅ **Native Processes** (Zero Docker) | ❌ Complex Docker-in-Docker setup |
+| **AI Role** | ✅ **Analysis & Advice** (Co-pilot) | ❌ Full Control (Prone to hallucinations) |
+| **Extensibility** | ✅ **Open Plugin System** (Web UI + Python) | ❌ Hard to modify core code |
+| **Performance** | ✅ **Blazing Fast Local Execution** | ❌ Slow container startup & high resource usage |
 
 ---
 
-## 🛡️ Plugin-Based Vulnerability Detection
+## 🌟 Key Features
 
-Strix v2 uses proven security tools as plugins:
+### 1. 🎯 Deterministic Phase Machine
+Instead of letting an LLM "decide what to do next", 🐯trix uses a strict code-controlled flow to ensure coverage:
+- **Reconnaissance**: Asset discovery
+- **Enumeration**: Parameter & path expansion
+- **Vulnerability Scan**: Plugin execution
+- **Validation**: PoC verification
 
-| Plugin | Phase | Description |
-|--------|-------|-------------|
-| **nuclei** | Vulnerability Scan | Template-based vulnerability scanning (10,000+ templates) |
-| **httpx** | Reconnaissance | HTTP probing, technology detection |
-| **ffuf** | Enumeration | Directory brute-forcing, parameter fuzzing |
-| **katana** | Reconnaissance | Web crawling, endpoint discovery |
-| **sqlmap** | Exploitation | SQL injection detection and exploitation |
+### 2. 🔌 Dual-Mode Plugin System
+Infinitely extensible capabilities with two ways to add tools:
+- **Web UI (No Code)**: Simply fill in a command template (e.g., `nmap -sV {target}`) in the frontend. The LLM automatically decides when to use it based on context.
+- **Python (Advanced)**: Write Python classes for complex vulnerability parsing and logic control.
 
----
+### 3. 🧠 LLM-Augmented Analysis
+The LLM (e.g., GPT-4, Claude) serves as a **Super Analyst**, not a controller:
+- Analyzes hidden parameters in HTTP responses
+- Generates targeted payloads
+- Explains findings and suggests remediation
 
-## 🔄 How Strix v2 Works
-
-Strix v2 follows a **deterministic, code-controlled** workflow:
-
-```
-RECONNAISSANCE → ENUMERATION → VULNERABILITY_SCAN → VALIDATION → REPORTING
-```
-
-| Phase | Plugins | Output |
-|-------|---------|--------|
-| **Reconnaissance** | httpx, katana | Discovered endpoints, technologies |
-| **Enumeration** | ffuf | Hidden paths, parameters |
-| **Vulnerability Scan** | nuclei, sqlmap | Detected vulnerabilities |
-| **Validation** | nuclei | Verified findings |
-| **Reporting** | - | JSON, Markdown, SARIF reports |
-
-### Key Principles
-
-1. **Code controls flow** - Phase transitions are deterministic, not LLM-decided
-2. **Plugins execute** - Security tools run natively, no Docker/sandbox
-3. **Humans review** - All results require human analysis
+### 4. 💻 Modern Interface
+- **Web UI**: Beautiful React + Tailwind dashboard
+- **Real-time**: WebSocket-based live logs and progress
+- **Management**: Full scan history and report management
 
 ---
 
-## 🚀 Installation
+## 🛠️ Quick Start
 
 ### Prerequisites
+- **Python**: 3.10+
+- **Node.js**: 18+ (for frontend)
+- **Go**: (Optional, for tools like nuclei)
 
-1. **Python 3.12+**: Required for the backend
-2. **Node.js 18+**: Required for the desktop UI
-3. **Security Tools**: Required for scanning
-
-### Install Security Tools
-
-```bash
-# Go tools (requires Go 1.21+)
-go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install github.com/ffuf/ffuf/v2@latest
-go install github.com/projectdiscovery/katana/cmd/katana@latest
-
-# Python tools
-pipx install sqlmap
-
-# Verify installation
-nuclei -version
-httpx -version
-ffuf -version
-katana -version
-sqlmap --version
-```
-
-### Install Strix
+### Install & Run
 
 ```bash
-# Clone repository
-git clone https://github.com/your-org/strix.git
-cd strix
+# 1. Clone the repository
+git clone https://github.com/your-repo/trix.git
+cd trix
 
-# Backend
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
-
-# Frontend
-cd desktop
-pnpm install
-```
-
----
-
-## ⚙️ Configuration
-
-### Optional: LLM for Analysis (Future Feature)
-
-```bash
-export STRIX_LLM="openai/gpt-4o"
-export LLM_API_KEY="sk-..."
-```
-
-> Note: LLM integration is optional in v2. The core scanning workflow is fully functional without LLM.
-
----
-
-## 💻 Usage
-
-### Web UI (Recommended)
-
-```bash
+# 2. Start (Auto-installs dependencies)
 ./start.sh
 ```
 
-Features:
-- 📊 Real-time scan progress with phase visualization
-- 🔌 Plugin management (install/enable/disable)
-- 📈 Vulnerability dashboard with severity breakdown
-- 📄 Export reports (JSON, Markdown, SARIF)
-- 🌙 Dark/Light theme support
-
-### API Usage
-
-```bash
-# Create scan
-curl -X POST http://localhost:8000/api/scans \
-  -H "Content-Type: application/json" \
-  -d '{"target": "https://example.com"}'
-
-# Get scan status
-curl http://localhost:8000/api/scans/{scan_id}
-
-# List vulnerabilities
-curl http://localhost:8000/api/results/{scan_id}/vulnerabilities
-```
-
-### WebSocket Events
-
-Connect to `ws://localhost:8000/ws/{client_id}` for real-time updates:
-
-```javascript
-// Subscribe to scan updates
-ws.send(JSON.stringify({ action: "subscribe", scan_id: "abc123" }))
-
-// Receive events
-// - scan.started
-// - phase.started / phase.completed
-// - plugin.started / plugin.output / plugin.completed
-// - vulnerability.found
-// - scan.completed / scan.failed
-```
+Open Web UI: `http://localhost:5173`
 
 ---
 
-## 🔌 Creating Custom Plugins
+## 🔌 Adding Custom Plugins
 
-```yaml
-# plugins/my-scanner/manifest.yaml
-name: my-scanner
-version: "1.0.0"
-display_name: "My Custom Scanner"
-description: "Custom vulnerability scanner"
-author: "Your Name"
+The plugin system is the heart of 🐯trix.
 
-phases:
-  - VULNERABILITY_SCAN
+### Method 1: Via Frontend UI (Recommended - No Code)
 
-capabilities:
-  - WEB_SCANNING
+Perfect for quickly integrating CLI tools:
+1. Go to **Plugins** page in Web UI
+2. Click **Add Custom Plugin**
+3. Fill in command (e.g., `nikto -host {target}`)
+4. Select **Capabilities** and **Phases**
+5. **Instant activation**, no restart required!
 
-executable:
-  binary: my-scanner
-  install_method: go
-  install_command: "go install github.com/example/my-scanner@latest"
-```
+### Method 2: Python Plugin (Advanced)
+
+For deep integration:
 
 ```python
 # plugins/my-scanner/plugin.py
-from strix.plugins.base import BasePlugin, ScanPhase, PluginCapability
+from strix.plugins.base import BasePlugin, PluginEvent, ScanPhase
 
 class MyScanner(BasePlugin):
     name = "my-scanner"
-    version = "1.0.0"
     phases = [ScanPhase.VULNERABILITY_SCAN]
-    capabilities = [PluginCapability.WEB_SCANNING]
     
-    async def execute(self, target, phase, parameters):
-        async for event in self.stream_command(
-            ["my-scanner", "-target", target],
-            phase,
-            line_parser=self._parse_output,
-        ):
-            yield event
+    async def execute(self, target: str, phase: ScanPhase, params: dict):
+        yield PluginEvent(event_type="STARTED", message=f"Scanning {target}")
+        # ... logic ...
 ```
 
 ---
 
-## ⚠️ What's NOT in Strix v2
-
-The following v1 features have been **permanently removed**:
-
-| Removed Feature | Reason |
-|-----------------|--------|
-| **Agent loops** | LLM should advise, not control |
-| **Docker/Sandbox runtime** | Tools run natively for transparency |
-| **CLI/TUI interface** | Replaced by Web UI + API |
-| **LLM-controlled tool selection** | Code determines workflow |
-| **MCP gateway** | Agent-specific, not needed |
-| **Scope configuration files** | Replaced by ScanConfig API |
-| **Multi-agent orchestration** | Single deterministic engine |
-| **Autonomous scanning** | Human-in-the-loop required |
-
-See [v2 设计哲学](docs/strix-v2-philosophy.md) for the architectural rationale.
-
----
-
-## 📁 Project Structure
+## 🏗️ Architecture Overview
 
 ```
-strix/
-├── desktop/              # Tauri + React frontend
-├── plugins/              # Security tool plugins
-│   ├── nuclei/
-│   ├── httpx/
-│   ├── ffuf/
-│   ├── katana/
-│   └── sqlmap/
-├── strix/
-│   ├── server/           # FastAPI backend
-│   │   ├── app.py        # Main application
-│   │   └── routes/       # API endpoints
-│   ├── engine/           # Scan engine
-│   │   ├── scan_engine.py
-│   │   ├── phase_manager.py
-│   │   ├── event_bus.py
-│   │   └── result_collector.py
-│   ├── plugins/          # Plugin infrastructure
-│   │   ├── base.py
-│   │   ├── registry.py
-│   │   └── loader.py
-│   ├── storage/          # SQLite persistence
-│   │   ├── database.py
-│   │   └── models.py
-│   └── llm/              # LLM integration (optional)
-├── docs/
-│   └── strix-v2-philosophy.md
-├── start.sh              # One-click launcher
-└── pyproject.toml
+🐯trix
+├── 🖥️ Desktop (Frontend)    # React + Tauri, User Interface
+├── 🔌 Plugins               # Independent Security Tools (Nuclei, SQLMap, Custom...)
+├── 🧠 Engine (Core)         # Deterministic State Machine
+│   ├── Phase Manager        # Flow Control
+│   ├── Event Bus            # Real-time Messaging
+│   └── Scan Controller      # Task Scheduling
+└── 💾 Storage               # SQLite Persistence
 ```
 
 ---
 
 ## 🤝 Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-Key principle: Any change must align with the [v2 设计哲学](docs/strix-v2-philosophy.md).
-
----
+Pull Requests are welcome! Whether it's a new plugin, UI improvement, or core optimization.
 
 ## 📄 License
 
-Apache 2.0 - See [LICENSE](LICENSE)
-
----
-
-## 🙏 Acknowledgments
-
-- [ProjectDiscovery](https://projectdiscovery.io/) for Nuclei, httpx, katana
-- [ffuf](https://github.com/ffuf/ffuf) for web fuzzing
-- [sqlmap](https://sqlmap.org/) for SQL injection testing
+Apache 2.0 License

@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from strix.plugins.base import (
+from trix.plugins.base import (
     BasePlugin,
     PluginResult,
     VulnerabilityFinding,
@@ -191,15 +191,22 @@ class NucleiPlugin(BasePlugin):
     
     async def execute(
         self,
+        target: str,
+        phase: ScanPhase,
         params: dict[str, Any],
     ) -> AsyncGenerator[PluginEvent, None]:
         """Execute nuclei scan."""
+        from trix.plugins.base import EventType as PluginEventType
+        
+        # Ensure target is in params
+        if "target" not in params:
+            params["target"] = target
+        
         try:
             cmd = self.build_command(params)
-            target = params.get("target", "unknown")
             
             yield PluginEvent(
-                type="started",
+                event_type=PluginEventType.STARTED,
                 message=f"Starting nuclei scan on {target}",
                 data={"command": " ".join(cmd)},
             )
@@ -223,16 +230,15 @@ class NucleiPlugin(BasePlugin):
                 if finding:
                     findings_count += 1
                     yield PluginEvent(
-                        type="finding",
+                        event_type=PluginEventType.VULNERABILITY,
                         message=f"Found: {finding.title}",
-                        data=finding.__dict__,
-                        finding=finding,
+                        data=finding.to_dict(),
                     )
             
             await process.wait()
             
             yield PluginEvent(
-                type="completed",
+                event_type=PluginEventType.COMPLETED,
                 message=f"Nuclei scan completed. Found {findings_count} issues.",
                 data={
                     "findings_count": findings_count,
@@ -243,7 +249,7 @@ class NucleiPlugin(BasePlugin):
         except Exception as e:
             logger.exception(f"Nuclei execution error: {e}")
             yield PluginEvent(
-                type="error",
+                event_type=PluginEventType.ERROR,
                 message=str(e),
                 data={"error": str(e)},
             )

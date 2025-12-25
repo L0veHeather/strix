@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from strix.plugins.base import (
+from trix.plugins.base import (
     BasePlugin,
     PluginResult,
     VulnerabilityFinding,
@@ -259,12 +259,20 @@ class FfufPlugin(BasePlugin):
     
     async def execute(
         self,
+        target: str,
+        phase: ScanPhase,
         params: dict[str, Any],
     ) -> AsyncGenerator[PluginEvent, None]:
         """Execute ffuf fuzzing."""
+        from trix.plugins.base import EventType as PluginEventType
+        
+        # Ensure url is set
+        if "url" not in params:
+            params["url"] = target
+        
         try:
             cmd = self.build_command(params)
-            url = params.get("url", "unknown")
+            url = params.get("url", target)
             
             # Create temp file for output
             with tempfile.NamedTemporaryFile(
@@ -277,7 +285,7 @@ class FfufPlugin(BasePlugin):
             cmd.extend(["-o", output_file])
             
             yield PluginEvent(
-                type="started",
+                event_type=PluginEventType.STARTED,
                 message=f"Starting ffuf fuzzing on {url}",
                 data={"command": " ".join(cmd)},
             )
@@ -305,7 +313,7 @@ class FfufPlugin(BasePlugin):
             # Yield results
             for result in results:
                 yield PluginEvent(
-                    type="result",
+                    event_type=PluginEventType.OUTPUT,
                     message=f"Found: {result.get('url', 'unknown')}",
                     data={
                         "url": result.get("url"),
@@ -320,7 +328,7 @@ class FfufPlugin(BasePlugin):
                 )
             
             yield PluginEvent(
-                type="completed",
+                event_type=PluginEventType.COMPLETED,
                 message=f"Ffuf completed. Found {len(results)} endpoints.",
                 data={
                     "results_count": len(results),
@@ -331,7 +339,7 @@ class FfufPlugin(BasePlugin):
         except Exception as e:
             logger.exception(f"Ffuf execution error: {e}")
             yield PluginEvent(
-                type="error",
+                event_type=PluginEventType.ERROR,
                 message=str(e),
                 data={"error": str(e)},
             )

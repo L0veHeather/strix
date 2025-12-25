@@ -35,7 +35,7 @@ setup-dev: dev-install
 dev-link:
 	@echo "🔗 Setting up editable install (hot updates)..."
 	python3 -m pip install -e .
-	@echo "✅ Editable install complete. Changes to 'strix/' will take effect immediately."
+	@echo "✅ Editable install complete. Changes to 'trix/' will take effect immediately."
 
 format:
 	@echo "🎨 Formatting code with ruff..."
@@ -46,19 +46,19 @@ lint:
 	@echo "🔍 Linting code with ruff..."
 	poetry run ruff check . --fix
 	@echo "📝 Running additional linting with pylint..."
-	poetry run pylint strix/ --score=no --reports=no
+	poetry run pylint trix/ --score=no --reports=no
 	@echo "✅ Linting complete!"
 
 type-check:
 	@echo "🔍 Type checking with mypy..."
-	poetry run mypy strix/
+	poetry run mypy trix/
 	@echo "🔍 Type checking with pyright..."
-	poetry run pyright strix/
+	poetry run pyright trix/
 	@echo "✅ Type checking complete!"
 
 security:
 	@echo "🔒 Running security checks with bandit..."
-	poetry run bandit -r strix/ -c pyproject.toml
+	poetry run bandit -r trix/ -c pyproject.toml
 	@echo "✅ Security checks complete!"
 
 check-all: format lint type-check security
@@ -71,7 +71,7 @@ test:
 
 test-cov:
 	@echo "🧪 Running tests with coverage..."
-	poetry run pytest -v --cov=strix --cov-report=term-missing --cov-report=html
+	poetry run pytest -v --cov=trix --cov-report=term-missing --cov-report=html
 	@echo "✅ Tests with coverage complete!"
 	@echo "📊 Coverage report generated in htmlcov/"
 
@@ -98,16 +98,16 @@ dev: format lint type-check test
 # Docker Sandbox Management
 # ============================================================================
 
-SANDBOX_IMAGE ?= strix-sandbox:local
+SANDBOX_IMAGE ?= trix-sandbox:local
 SANDBOX_DOCKERFILE ?= containers/Dockerfile
 
 build-sandbox:
-	@echo "🐳 Building strix-sandbox image..."
+	@echo "🐳 Building trix-sandbox image..."
 	docker build -t $(SANDBOX_IMAGE) -f $(SANDBOX_DOCKERFILE) .
 	@echo "✅ Sandbox image built: $(SANDBOX_IMAGE)"
 
 build-sandbox-nocache:
-	@echo "🐳 Building strix-sandbox image (no cache)..."
+	@echo "🐳 Building trix-sandbox image (no cache)..."
 	docker build --no-cache -t $(SANDBOX_IMAGE) -f $(SANDBOX_DOCKERFILE) .
 	@echo "✅ Sandbox image built: $(SANDBOX_IMAGE)"
 
@@ -117,13 +117,13 @@ sandbox-shell:
 
 sandbox-tools:
 	@echo "📦 Listing tools in sandbox image..."
-	docker run --rm --entrypoint /bin/bash $(SANDBOX_IMAGE) -c "ls -la /app/strix/tools/"
+	docker run --rm --entrypoint /bin/bash $(SANDBOX_IMAGE) -c "ls -la /app/trix/tools/"
 
 dev-mode:
-	@echo "🔧 Starting strix in development mode (volume mounts enabled)..."
-	STRIX_DEV_MODE=true poetry run strix
+	@echo "🔧 Starting trix in development mode (volume mounts enabled)..."
+	STRIX_DEV_MODE=true poetry run trix
 
 clean-sandbox:
-	@echo "🧹 Removing strix scan containers..."
-	docker ps -a --filter "label=strix-scan-id" -q | xargs -r docker rm -f
+	@echo "🧹 Removing trix scan containers..."
+	docker ps -a --filter "label=trix-scan-id" -q | xargs -r docker rm -f
 	@echo "✅ Sandbox containers cleaned!"

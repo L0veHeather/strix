@@ -20,7 +20,7 @@ print_banner() {
     echo -e "${BLUE}"
     echo "  ╔═══════════════════════════════════════════════════════════╗"
     echo "  ║                                                           ║"
-    echo "  ║   🦉 Strix - Autonomous AI Security Agent                ║"
+    echo "  ║   🐯 Trix - Autonomous AI Security Agent                 ║"
     echo "  ║                                                           ║"
     echo "  ╚═══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -62,33 +62,28 @@ check_dependencies() {
     log_info "All core dependencies satisfied."
 }
 
-check_optional_tools() {
-    log_info "Checking optional security tools..."
-    
+check_security_tools() {
+    # List of optional security tools
     local tools=("nuclei" "httpx" "ffuf" "katana" "sqlmap")
+    local installed=()
     local missing=()
     
+    # Check which tools are available
     for tool in "${tools[@]}"; do
-        if ! command -v "$tool" &> /dev/null; then
+        if command -v "$tool" &> /dev/null; then
+            installed+=("$tool")
+        else
             missing+=("$tool")
         fi
     done
     
+    if [ ${#installed[@]} -gt 0 ]; then
+        log_info "Security tools available: ${installed[*]}"
+    fi
+    
     if [ ${#missing[@]} -gt 0 ]; then
-        log_warn "Missing optional tools: ${missing[*]}"
-        log_warn "Install them for full functionality:"
-        echo ""
-        echo "  # Go tools (requires Go installed)"
-        echo "  go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"
-        echo "  go install github.com/projectdiscovery/httpx/cmd/httpx@latest"
-        echo "  go install github.com/ffuf/ffuf/v2@latest"
-        echo "  go install github.com/projectdiscovery/katana/cmd/katana@latest"
-        echo ""
-        echo "  # Python tool"
-        echo "  pipx install sqlmap"
-        echo ""
-    else
-        log_info "All security tools installed."
+        log_warn "Optional tools not found: ${missing[*]}"
+        log_warn "To install, run: ./start.sh tools"
     fi
 }
 
@@ -107,19 +102,38 @@ setup_python_env() {
     
     log_info "Using Python: $($PYTHON_BIN --version)"
     
-    # Create venv if not exists or if it's using wrong Python version
-    if [ ! -d ".venv" ] || [ ! -f ".venv/bin/python" ]; then
+    # Check if existing venv is valid (Python executable exists and works)
+    VENV_VALID=false
+    if [ -d ".venv" ] && [ -f ".venv/bin/python" ]; then
+        if .venv/bin/python --version &> /dev/null; then
+            VENV_VALID=true
+        else
+            log_warn "Virtual environment is broken (Python not executable), recreating..."
+            rm -rf .venv
+        fi
+    fi
+    
+    # Create venv if not exists or was invalid
+    if [ "$VENV_VALID" = false ]; then
         log_info "Creating virtual environment..."
         $PYTHON_BIN -m venv .venv
     fi
     
-    # Install core dependencies
+    # Install core dependencies (matching pyproject.toml)
     log_info "Installing Python dependencies..."
     .venv/bin/pip install --upgrade pip -q
-    .venv/bin/pip install --timeout 60 -q \
+    .venv/bin/pip install --timeout 120 -q \
         fastapi uvicorn pydantic httpx litellm sqlalchemy \
         pyyaml rich textual requests aiofiles websockets \
+        tenacity openai playwright docker gql \
+        xmltodict pyte libtmux jinja2 \
         2>/dev/null || log_warn "Some optional deps may have failed"
+    
+    # Install playwright browsers (required for browser automation)
+    if [ ! -d "$HOME/.cache/ms-playwright" ]; then
+        log_info "Installing Playwright browsers (first time only)..."
+        .venv/bin/playwright install chromium 2>/dev/null || log_warn "Playwright browser install may have failed"
+    fi
     
     log_info "Python dependencies installed."
 }
@@ -138,12 +152,12 @@ start_backend() {
     log_info "Starting backend server on port 8000..."
     
     # Kill existing server if running
-    pkill -f "uvicorn strix.server.app:app" 2>/dev/null || true
+    pkill -f "uvicorn trix.server.app:app" 2>/dev/null || true
     
     # Start server in background using venv
     cd "$SCRIPT_DIR"
     mkdir -p logs
-    nohup .venv/bin/python -m uvicorn strix.server.app:app --host 0.0.0.0 --port 8000 > logs/backend.log 2>&1 &
+    nohup .venv/bin/python -m uvicorn trix.server.app:app --host 0.0.0.0 --port 8000 > logs/backend.log 2>&1 &
     echo $! > .backend.pid
     
     # Wait for server to start
@@ -254,26 +268,50 @@ show_status() {
 }
 
 install_tools() {
-    log_info "Installing security tools..."
+    log_info "安装安全工具..."
     
-    if command -v go &> /dev/null; then
-        log_info "Installing Go-based tools..."
-        go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
-        go install github.com/projectdiscovery/httpx/cmd/httpx@latest
-        go install github.com/ffuf/ffuf/v2@latest
-        go install github.com/projectdiscovery/katana/cmd/katana@latest
+    # 优先使用 Homebrew (macOS 最可靠的方式)
+    if command -v brew &> /dev/null; then
+        log_info "使用 Homebrew 安装工具..."
+        
+        # ProjectDiscovery 工具 (nuclei, httpx, katana)
+        if ! command -v nuclei &> /dev/null; then
+            log_info "  安装 nuclei..."
+            brew install nuclei 2>/dev/null || log_warn "nuclei 安装失败"
+        fi
+        
+        if ! command -v httpx &> /dev/null; then
+            log_info "  安装 httpx..."
+            brew install httpx 2>/dev/null || log_warn "httpx 安装失败"
+        fi
+        
+        if ! command -v katana &> /dev/null; then
+            log_info "  安装 katana..."
+            brew install katana 2>/dev/null || log_warn "katana 安装失败"
+        fi
+        
+        if ! command -v ffuf &> /dev/null; then
+            log_info "  安装 ffuf..."
+            brew install ffuf 2>/dev/null || log_warn "ffuf 安装失败"
+        fi
+        
+        if ! command -v sqlmap &> /dev/null; then
+            log_info "  安装 sqlmap..."
+            brew install sqlmap 2>/dev/null || log_warn "sqlmap 安装失败"
+        fi
+        
+        log_info "Homebrew 工具安装完成！"
     else
-        log_warn "Go not installed, skipping Go tools."
+        log_warn "未找到 Homebrew，请先安装: /bin/bash -c \"\$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
+        log_info "或者手动下载工具："
+        log_info "  nuclei: https://github.com/projectdiscovery/nuclei/releases"
+        log_info "  httpx:  https://github.com/projectdiscovery/httpx/releases"
+        log_info "  katana: https://github.com/projectdiscovery/katana/releases"
+        log_info "  ffuf:   https://github.com/ffuf/ffuf/releases"
+        log_info "  sqlmap: pip install sqlmap"
     fi
     
-    if command -v pipx &> /dev/null; then
-        log_info "Installing Python tools..."
-        pipx install sqlmap
-    else
-        log_warn "pipx not installed, skipping Python tools."
-    fi
-    
-    log_info "Tool installation complete."
+    log_info "工具安装完成。"
 }
 
 # Create logs directory
@@ -285,7 +323,7 @@ print_banner
 case "${1:-dev}" in
     dev)
         check_dependencies
-        check_optional_tools
+        check_security_tools
         setup_python_env
         setup_frontend
         start_backend
@@ -293,10 +331,9 @@ case "${1:-dev}" in
         open_browser
         
         echo ""
-        log_info "Strix is running!"
-        echo ""
-        echo "  🌐 Web UI:  http://localhost:5173"
-        echo "  📡 API:     http://localhost:8000"
+        log_info "Trix is running!"
+        log_info "Backend URL: http://localhost:8000"
+        log_info "Frontend URL: http://localhost:5173"
         echo "  📖 Docs:    http://localhost:8000/docs"
         echo ""
         echo "Press Ctrl+C to stop..."

@@ -11,7 +11,7 @@ import SettingsPage from "@/pages/settings";
 
 function App() {
   return (
-    <ThemeProvider defaultTheme="dark" storageKey="strix-ui-theme">
+    <ThemeProvider defaultTheme="dark" storageKey="trix-ui-theme">
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Layout />}>

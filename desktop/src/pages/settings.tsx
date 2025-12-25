@@ -31,7 +31,7 @@ export default function SettingsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // LLM State
+  // LLM 状态
   const [selectedProvider, setSelectedProvider] = useState<string>("openai");
   const [selectedModel, setSelectedModel] = useState<string>("");
   const [apiKey, setApiKey] = useState<string>("");
@@ -40,48 +40,48 @@ export default function SettingsPage() {
   const [timeout, setTimeoutValue] = useState<number>(600);
   const [enableCaching, setEnableCaching] = useState(true);
 
-  // Fetch providers
+  // 获取提供商列表
   const { data: providersData } = useQuery({
     queryKey: ["llm-providers"],
     queryFn: settingsApi.getProviders,
   });
 
-  // Fetch current LLM config
+  // 获取当前 LLM 配置
   const { data: llmConfigData } = useQuery({
     queryKey: ["llm-config"],
     queryFn: settingsApi.getLLMConfig,
   });
 
-  // Update config mutation
+  // 更新配置
   const updateConfig = useMutation({
     mutationFn: settingsApi.updateLLMConfig,
     onSuccess: () => {
-      toast({ title: "Settings saved", description: "LLM configuration updated" });
+      toast({ title: "设置已保存", description: "LLM 配置已更新" });
       queryClient.invalidateQueries({ queryKey: ["llm-config"] });
     },
     onError: (error: Error) => {
-      toast({ title: "Failed to save", description: error.message, variant: "destructive" });
+      toast({ title: "保存失败", description: error.message, variant: "destructive" });
     },
   });
 
-  // Test connection mutation
+  // 测试连接
   const testConnection = useMutation({
     mutationFn: settingsApi.testLLMConnection,
     onSuccess: (data) => {
       if (data.status === "success") {
-        toast({ title: "Connection successful", description: `Model: ${data.model}` });
+        toast({ title: "连接成功", description: `模型: ${data.model}` });
       } else if (data.status === "warning") {
-        toast({ title: "Configuration saved", description: data.message });
+        toast({ title: "配置已保存", description: data.message });
       } else {
-        toast({ title: "Connection failed", description: data.message, variant: "destructive" });
+        toast({ title: "连接失败", description: data.message, variant: "destructive" });
       }
     },
     onError: (error: Error) => {
-      toast({ title: "Test failed", description: error.message, variant: "destructive" });
+      toast({ title: "测试失败", description: error.message, variant: "destructive" });
     },
   });
 
-  // Initialize from fetched config
+  // 从获取的配置初始化
   useEffect(() => {
     if (llmConfigData?.config) {
       const config = llmConfigData.config;
@@ -90,21 +90,20 @@ export default function SettingsPage() {
       setEnableCaching(config.enable_caching ?? true);
       if (config.api_base) setApiBase(config.api_base);
 
-      // Determine provider from model
       const provider = config.model?.split("/")[0] || "openai";
       setSelectedProvider(provider);
     }
   }, [llmConfigData]);
 
-  // Default providers as fallback when API is not available
+  // 默认提供商（作为 API 不可用时的后备）
   const DEFAULT_PROVIDERS = [
     {
       id: "openai",
       name: "OpenAI",
       models: [
-        { id: "openai/gpt-4o", name: "GPT-4o", description: "Most capable model" },
-        { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", description: "Fast and efficient" },
-        { id: "openai/o1-preview", name: "o1 Preview", description: "Reasoning model" },
+        { id: "openai/gpt-4o", name: "GPT-4o", description: "最强大的模型" },
+        { id: "openai/gpt-4o-mini", name: "GPT-4o Mini", description: "快速高效" },
+        { id: "openai/o1-preview", name: "o1 Preview", description: "推理模型" },
       ],
       requires_key: true,
       key_env: "OPENAI_API_KEY",
@@ -113,9 +112,9 @@ export default function SettingsPage() {
       id: "anthropic",
       name: "Anthropic",
       models: [
-        { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", description: "Latest Sonnet" },
-        { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "Balanced" },
-        { id: "anthropic/claude-3-opus-20240229", name: "Claude 3 Opus", description: "Most capable" },
+        { id: "anthropic/claude-sonnet-4-20250514", name: "Claude Sonnet 4", description: "最新 Sonnet" },
+        { id: "anthropic/claude-3-5-sonnet-20241022", name: "Claude 3.5 Sonnet", description: "均衡型" },
+        { id: "anthropic/claude-3-opus-20240229", name: "Claude 3 Opus", description: "最强大" },
       ],
       requires_key: true,
       key_env: "ANTHROPIC_API_KEY",
@@ -124,27 +123,27 @@ export default function SettingsPage() {
       id: "deepseek",
       name: "DeepSeek",
       models: [
-        { id: "deepseek/deepseek-chat", name: "DeepSeek Chat", description: "General purpose chat" },
-        { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner", description: "Reasoning model (R1)" },
+        { id: "deepseek/deepseek-chat", name: "DeepSeek Chat", description: "通用对话" },
+        { id: "deepseek/deepseek-reasoner", name: "DeepSeek Reasoner", description: "推理模型 (R1)" },
       ],
       requires_key: true,
       key_env: "DEEPSEEK_API_KEY",
     },
     {
       id: "ollama",
-      name: "Ollama (Local)",
+      name: "Ollama (本地)",
       models: [
-        { id: "ollama/llama3.3:70b", name: "Llama 3.3 70B", description: "Large local model" },
-        { id: "ollama/llama3.2:latest", name: "Llama 3.2", description: "Fast local model" },
-        { id: "ollama/qwen2.5:32b", name: "Qwen 2.5 32B", description: "Chinese + English" },
-        { id: "ollama/deepseek-r1:14b", name: "DeepSeek R1 14B", description: "Reasoning (local)" },
+        { id: "ollama/llama3.3:70b", name: "Llama 3.3 70B", description: "大型本地模型" },
+        { id: "ollama/llama3.2:latest", name: "Llama 3.2", description: "快速本地模型" },
+        { id: "ollama/qwen2.5:32b", name: "Qwen 2.5 32B", description: "中英双语" },
+        { id: "ollama/deepseek-r1:14b", name: "DeepSeek R1 14B", description: "推理 (本地)" },
       ],
       requires_key: false,
       default_base: "http://localhost:11434",
     },
     {
       id: "custom",
-      name: "Custom",
+      name: "自定义",
       models: [],
       requires_key: true,
       supports_custom_base: true,
@@ -175,24 +174,24 @@ export default function SettingsPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
+      {/* 页面头部 */}
       <div>
-        <h1 className="text-3xl font-bold">Settings</h1>
-        <p className="text-muted-foreground">Configure Strix preferences</p>
+        <h1 className="text-3xl font-bold">设置</h1>
+        <p className="text-muted-foreground">配置 Trix 偏好设置</p>
       </div>
 
-      {/* LLM Configuration */}
+      {/* LLM 配置 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Brain className="h-5 w-5" />
-            LLM Configuration
+            LLM 配置
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-6">
-          {/* Provider Selection */}
+          {/* 提供商选择 */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Provider</label>
+            <label className="text-sm font-medium">提供商</label>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               {providers.map((provider) => (
                 <Button
@@ -216,10 +215,10 @@ export default function SettingsPage() {
             </div>
           </div>
 
-          {/* Model Selection */}
+          {/* 模型选择 */}
           {currentProvider && currentProvider.models.length > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Model</label>
+              <label className="text-sm font-medium">模型</label>
               <div className="grid gap-2">
                 {currentProvider.models.map((model) => (
                   <div
@@ -245,26 +244,26 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* Custom Model Input */}
+          {/* 自定义模型输入 */}
           {currentProvider?.id === "custom" && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">Model Name</label>
+              <label className="text-sm font-medium">模型名称</label>
               <Input
                 value={selectedModel}
                 onChange={(e) => setSelectedModel(e.target.value)}
-                placeholder="e.g., openai/gpt-4o or ollama/llama3.2"
+                placeholder="例如: openai/gpt-4o 或 ollama/llama3.2"
               />
             </div>
           )}
 
-          {/* API Key - Always show for supported providers */}
+          {/* API Key */}
           {(currentProvider?.requires_key || selectedProvider !== "ollama") && (
             <div className="space-y-3 p-4 bg-muted/30 rounded-lg border">
               <label className="text-sm font-medium flex items-center gap-2">
                 <Key className="h-4 w-4" />
-                API Key for {currentProvider?.name || selectedProvider}
+                {currentProvider?.name || selectedProvider} 的 API Key
                 {configuredProviders[selectedProvider] && (
-                  <Badge variant="secondary" className="ml-2 bg-green-500/20 text-green-600">✓ Configured</Badge>
+                  <Badge variant="secondary" className="ml-2 bg-green-500/20 text-green-600">✓ 已配置</Badge>
                 )}
               </label>
               <div className="flex gap-2">
@@ -275,8 +274,8 @@ export default function SettingsPage() {
                     onChange={(e) => setApiKey(e.target.value)}
                     placeholder={
                       configuredProviders[selectedProvider]
-                        ? "Enter new key to update..."
-                        : `Enter your ${currentProvider?.name || selectedProvider} API key`
+                        ? "输入新密钥以更新..."
+                        : `输入您的 ${currentProvider?.name || selectedProvider} API 密钥`
                     }
                     className="pr-10 font-mono text-sm"
                   />
@@ -292,69 +291,69 @@ export default function SettingsPage() {
                 </div>
               </div>
 
-              {/* LiteLLM Provider-specific instructions */}
+              {/* LiteLLM 提供商说明 */}
               <div className="text-xs space-y-2 p-3 bg-background/50 rounded border border-dashed">
-                <p className="font-medium text-foreground">LiteLLM Configuration:</p>
+                <p className="font-medium text-foreground">LiteLLM 配置说明:</p>
                 {selectedProvider === "openai" && (
                   <>
-                    <p>• Environment: <code className="bg-muted px-1 rounded">OPENAI_API_KEY</code></p>
-                    <p>• Model format: <code className="bg-muted px-1 rounded">openai/gpt-4o</code>, <code className="bg-muted px-1 rounded">openai/gpt-4o-mini</code></p>
-                    <p className="text-muted-foreground">Get key: https://platform.openai.com/api-keys</p>
+                    <p>• 环境变量: <code className="bg-muted px-1 rounded">OPENAI_API_KEY</code></p>
+                    <p>• 模型格式: <code className="bg-muted px-1 rounded">openai/gpt-4o</code>, <code className="bg-muted px-1 rounded">openai/gpt-4o-mini</code></p>
+                    <p className="text-muted-foreground">获取密钥: https://platform.openai.com/api-keys</p>
                   </>
                 )}
                 {selectedProvider === "anthropic" && (
                   <>
-                    <p>• Environment: <code className="bg-muted px-1 rounded">ANTHROPIC_API_KEY</code></p>
-                    <p>• Model format: <code className="bg-muted px-1 rounded">anthropic/claude-3-5-sonnet-20241022</code></p>
-                    <p className="text-muted-foreground">Get key: https://console.anthropic.com/settings/keys</p>
+                    <p>• 环境变量: <code className="bg-muted px-1 rounded">ANTHROPIC_API_KEY</code></p>
+                    <p>• 模型格式: <code className="bg-muted px-1 rounded">anthropic/claude-3-5-sonnet-20241022</code></p>
+                    <p className="text-muted-foreground">获取密钥: https://console.anthropic.com/settings/keys</p>
                   </>
                 )}
                 {selectedProvider === "deepseek" && (
                   <>
-                    <p>• Environment: <code className="bg-muted px-1 rounded">DEEPSEEK_API_KEY</code></p>
-                    <p>• Model format: <code className="bg-muted px-1 rounded">deepseek/deepseek-chat</code>, <code className="bg-muted px-1 rounded">deepseek/deepseek-reasoner</code></p>
-                    <p className="text-muted-foreground">Get key: https://platform.deepseek.com/api_keys</p>
+                    <p>• 环境变量: <code className="bg-muted px-1 rounded">DEEPSEEK_API_KEY</code></p>
+                    <p>• 模型格式: <code className="bg-muted px-1 rounded">deepseek/deepseek-chat</code>, <code className="bg-muted px-1 rounded">deepseek/deepseek-reasoner</code></p>
+                    <p className="text-muted-foreground">获取密钥: https://platform.deepseek.com/api_keys</p>
                   </>
                 )}
                 {selectedProvider === "ollama" && (
                   <>
-                    <p>• No API key needed (local)</p>
-                    <p>• Model format: <code className="bg-muted px-1 rounded">ollama/llama3.2</code>, <code className="bg-muted px-1 rounded">ollama/qwen2.5</code></p>
-                    <p className="text-muted-foreground">Ensure Ollama is running: ollama serve</p>
+                    <p>• 无需 API 密钥 (本地运行)</p>
+                    <p>• 模型格式: <code className="bg-muted px-1 rounded">ollama/llama3.2</code>, <code className="bg-muted px-1 rounded">ollama/qwen2.5</code></p>
+                    <p className="text-muted-foreground">确保 Ollama 正在运行: ollama serve</p>
                   </>
                 )}
                 {selectedProvider === "custom" && (
                   <>
-                    <p>• Set API key and base URL below</p>
-                    <p>• Model format: <code className="bg-muted px-1 rounded">provider/model-name</code></p>
+                    <p>• 在下方设置 API 密钥和基础 URL</p>
+                    <p>• 模型格式: <code className="bg-muted px-1 rounded">provider/model-name</code></p>
                   </>
                 )}
               </div>
             </div>
           )}
 
-          {/* API Base URL */}
+          {/* API 基础 URL */}
           {(currentProvider?.default_base || currentProvider?.supports_custom_base) && (
             <div className="space-y-2">
-              <label className="text-sm font-medium">API Base URL</label>
+              <label className="text-sm font-medium">API 基础 URL</label>
               <Input
                 value={apiBase}
                 onChange={(e) => setApiBase(e.target.value)}
                 placeholder={currentProvider.default_base || "http://localhost:11434"}
               />
               <p className="text-xs text-muted-foreground">
-                Custom API endpoint (leave empty for default)
+                自定义 API 端点 (留空使用默认值)
               </p>
             </div>
           )}
 
-          {/* Advanced Settings */}
+          {/* 高级设置 */}
           <div className="space-y-4 pt-4 border-t">
-            <h4 className="text-sm font-medium">Advanced</h4>
+            <h4 className="text-sm font-medium">高级设置</h4>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm">Timeout (seconds)</label>
+                <label className="text-sm">超时时间 (秒)</label>
                 <Input
                   type="number"
                   value={timeout}
@@ -366,21 +365,21 @@ export default function SettingsPage() {
 
               <div className="flex items-center justify-between p-3 rounded-lg border">
                 <div>
-                  <p className="text-sm font-medium">Prompt Caching</p>
-                  <p className="text-xs text-muted-foreground">Anthropic only</p>
+                  <p className="text-sm font-medium">提示缓存</p>
+                  <p className="text-xs text-muted-foreground">仅限 Anthropic</p>
                 </div>
                 <Button
                   variant={enableCaching ? "default" : "outline"}
                   size="sm"
                   onClick={() => setEnableCaching(!enableCaching)}
                 >
-                  {enableCaching ? "Enabled" : "Disabled"}
+                  {enableCaching ? "已启用" : "已禁用"}
                 </Button>
               </div>
             </div>
           </div>
 
-          {/* Actions */}
+          {/* 操作按钮 */}
           <div className="flex gap-2 pt-4">
             <Button onClick={handleSave} disabled={updateConfig.isPending}>
               {updateConfig.isPending ? (
@@ -388,7 +387,7 @@ export default function SettingsPage() {
               ) : (
                 <Check className="mr-2 h-4 w-4" />
               )}
-              Save Configuration
+              保存配置
             </Button>
             <Button
               variant="outline"
@@ -398,24 +397,24 @@ export default function SettingsPage() {
               {testConnection.isPending ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : null}
-              Test Connection
+              测试连接
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Appearance */}
+      {/* 外观 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Sun className="h-5 w-5" />
-            Appearance
+            外观
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium">Theme</label>
+              <label className="text-sm font-medium">主题</label>
               <div className="flex gap-2 mt-2">
                 <Button
                   variant={theme === "light" ? "default" : "outline"}
@@ -423,7 +422,7 @@ export default function SettingsPage() {
                   onClick={() => setTheme("light")}
                 >
                   <Sun className="mr-2 h-4 w-4" />
-                  Light
+                  浅色
                 </Button>
                 <Button
                   variant={theme === "dark" ? "default" : "outline"}
@@ -431,7 +430,7 @@ export default function SettingsPage() {
                   onClick={() => setTheme("dark")}
                 >
                   <Moon className="mr-2 h-4 w-4" />
-                  Dark
+                  深色
                 </Button>
                 <Button
                   variant={theme === "system" ? "default" : "outline"}
@@ -439,7 +438,7 @@ export default function SettingsPage() {
                   onClick={() => setTheme("system")}
                 >
                   <Monitor className="mr-2 h-4 w-4" />
-                  System
+                  跟随系统
                 </Button>
               </div>
             </div>
@@ -447,17 +446,17 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Server Connection */}
+      {/* 服务器连接 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
-            Server Connection
+            服务器连接
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <label className="text-sm font-medium">API URL</label>
+            <label className="text-sm font-medium">API 地址</label>
             <Input
               value={settings.apiUrl}
               onChange={(e) => settings.setApiUrl(e.target.value)}
@@ -465,7 +464,7 @@ export default function SettingsPage() {
             />
           </div>
           <div className="space-y-2">
-            <label className="text-sm font-medium">WebSocket URL</label>
+            <label className="text-sm font-medium">WebSocket 地址</label>
             <Input
               value={settings.wsUrl}
               onChange={(e) => settings.setWsUrl(e.target.value)}
@@ -475,20 +474,20 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* Plugins */}
+      {/* 插件 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Download className="h-5 w-5" />
-            Plugins
+            插件
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">Auto-install plugins</p>
+              <p className="font-medium">自动安装插件</p>
               <p className="text-sm text-muted-foreground">
-                Automatically install missing plugins when needed
+                需要时自动安装缺失的插件
               </p>
             </div>
             <Button
@@ -496,26 +495,26 @@ export default function SettingsPage() {
               size="sm"
               onClick={() => settings.setAutoInstallPlugins(!settings.autoInstallPlugins)}
             >
-              {settings.autoInstallPlugins ? "Enabled" : "Disabled"}
+              {settings.autoInstallPlugins ? "已启用" : "已禁用"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* Notifications */}
+      {/* 通知 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
-            Notifications
+            通知
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-between">
             <div>
-              <p className="font-medium">Enable notifications</p>
+              <p className="font-medium">启用通知</p>
               <p className="text-sm text-muted-foreground">
-                Show notifications for scan events
+                显示扫描事件通知
               </p>
             </div>
             <Button
@@ -523,33 +522,33 @@ export default function SettingsPage() {
               size="sm"
               onClick={() => settings.setNotificationsEnabled(!settings.notificationsEnabled)}
             >
-              {settings.notificationsEnabled ? "Enabled" : "Disabled"}
+              {settings.notificationsEnabled ? "已启用" : "已禁用"}
             </Button>
           </div>
         </CardContent>
       </Card>
 
-      {/* About */}
+      {/* 关于 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Settings className="h-5 w-5" />
-            About
+            关于
           </CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Version</span>
+              <span className="text-muted-foreground">版本</span>
               <span className="font-medium">2.0.0</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">License</span>
+              <span className="text-muted-foreground">许可证</span>
               <span className="font-medium">MIT</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-muted-foreground">Current LLM</span>
-              <span className="font-medium">{selectedModel || "Not configured"}</span>
+              <span className="text-muted-foreground">当前 LLM</span>
+              <span className="font-medium">{selectedModel || "未配置"}</span>
             </div>
           </div>
         </CardContent>

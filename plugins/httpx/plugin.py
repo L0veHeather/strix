@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 from typing import Any, AsyncGenerator
 
-from strix.plugins.base import (
+from trix.plugins.base import (
     BasePlugin,
     PluginResult,
     VulnerabilityFinding,
@@ -166,15 +166,22 @@ class HttpxPlugin(BasePlugin):
     
     async def execute(
         self,
+        target: str,
+        phase: ScanPhase,
         params: dict[str, Any],
     ) -> AsyncGenerator[PluginEvent, None]:
         """Execute httpx probe."""
+        from trix.plugins.base import EventType as PluginEventType
+        
+        # Add target to params if not already there
+        if "target" not in params:
+            params["target"] = target
+        
         try:
             cmd = self.build_command(params)
-            target = params.get("target", params.get("target_list", "unknown"))
             
             yield PluginEvent(
-                type="started",
+                event_type=PluginEventType.STARTED,
                 message=f"Starting httpx probe on {target}",
                 data={"command": " ".join(cmd)},
             )
@@ -202,7 +209,7 @@ class HttpxPlugin(BasePlugin):
                     technologies_found.update(techs)
                     
                     yield PluginEvent(
-                        type="result",
+                        event_type=PluginEventType.OUTPUT,
                         message=f"Probed: {result.get('url', 'unknown')}",
                         data=result,
                     )
@@ -210,7 +217,7 @@ class HttpxPlugin(BasePlugin):
             await process.wait()
             
             yield PluginEvent(
-                type="completed",
+                event_type=PluginEventType.COMPLETED,
                 message=f"Httpx probe completed. Found {results_count} hosts.",
                 data={
                     "results_count": results_count,
@@ -222,7 +229,7 @@ class HttpxPlugin(BasePlugin):
         except Exception as e:
             logger.exception(f"Httpx execution error: {e}")
             yield PluginEvent(
-                type="error",
+                event_type=PluginEventType.ERROR,
                 message=str(e),
                 data={"error": str(e)},
             )

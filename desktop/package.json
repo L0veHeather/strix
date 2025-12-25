@@ -1,7 +1,7 @@
 {
-  "name": "strix-desktop",
+  "name": "trix-desktop",
   "version": "2.0.0",
-  "description": "Strix Security Scanner - Desktop UI",
+  "description": "Trix Security Scanner - Desktop UI",
   "private": true,
   "type": "module",
   "scripts": {

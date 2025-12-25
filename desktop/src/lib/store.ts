@@ -59,7 +59,7 @@ export interface ConsoleLogEntry {
 }
 
 // Store state
-interface StrixState {
+interface TrixState {
   // Active scan tracking
   activeScan: Scan | null;
   activePhases: ScanPhase[];
@@ -84,7 +84,7 @@ interface StrixState {
   getConsoleLogs: (scanId: string) => ConsoleLogEntry[];
 }
 
-export const useStrixStore = create<StrixState>()((set, get) => ({
+export const useTrixStore = create<TrixState>()((set, get) => ({
   activeScan: null,
   activePhases: [],
   consoleLogs: new Map(),
@@ -179,7 +179,7 @@ export const useSettingsStore = create<SettingsState>()(
       setNotificationsEnabled: (enabled) => set({ notificationsEnabled: enabled }),
     }),
     {
-      name: "strix-settings",
+      name: "trix-settings",
     }
   )
 );

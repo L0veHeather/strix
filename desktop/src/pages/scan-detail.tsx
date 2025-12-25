@@ -32,13 +32,30 @@ const PHASE_ORDER = [
   "REPORTING",
 ];
 
+const PHASE_NAMES: Record<string, string> = {
+  RECONNAISSANCE: "信息收集",
+  ENUMERATION: "枚举扫描",
+  VULNERABILITY_SCAN: "漏洞扫描",
+  EXPLOITATION: "漏洞利用",
+  VALIDATION: "验证确认",
+  REPORTING: "报告生成",
+};
+
+const SEVERITY_NAMES: Record<string, string> = {
+  critical: "严重",
+  high: "高危",
+  medium: "中危",
+  low: "低危",
+  info: "信息",
+};
+
 export default function ScanDetailPage() {
   const { scanId } = useParams<{ scanId: string }>();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { subscribe, unsubscribe, on } = useWebSocket();
 
-  // Subscribe to scan updates
+  // 订阅扫描更新
   useEffect(() => {
     if (scanId) {
       subscribe(scanId);
@@ -46,7 +63,7 @@ export default function ScanDetailPage() {
     }
   }, [scanId, subscribe, unsubscribe]);
 
-  // Listen for WebSocket events
+  // 监听 WebSocket 事件
   useEffect(() => {
     const cleanups = [
       on("scan.progress", () => {
@@ -63,7 +80,7 @@ export default function ScanDetailPage() {
     return () => cleanups.forEach((cleanup) => cleanup());
   }, [scanId, on, queryClient]);
 
-  // Fetch scan details
+  // 获取扫描详情
   const { data: scan, isLoading } = useQuery({
     queryKey: ["scan", scanId],
     queryFn: () => scanApi.getStatus(scanId!),
@@ -74,7 +91,7 @@ export default function ScanDetailPage() {
     },
   });
 
-  // Fetch vulnerabilities
+  // 获取漏洞列表
   const { data: vulnsData } = useQuery({
     queryKey: ["scan", scanId, "vulnerabilities"],
     queryFn: () => resultsApi.getScanVulnerabilities(scanId!),
@@ -82,7 +99,7 @@ export default function ScanDetailPage() {
     refetchInterval: scan?.status === "running" ? 5000 : false,
   });
 
-  // Control mutations
+  // 控制操作
   const pauseMutation = useMutation({
     mutationFn: () => scanApi.pause(scanId!),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["scan", scanId] }),
@@ -120,16 +137,28 @@ export default function ScanDetailPage() {
   const isPaused = scan.status === "paused";
   const isCompleted = scan.status === "completed";
 
+  const formatStatus = (status: string) => {
+    const map: Record<string, string> = {
+      pending: "等待中",
+      running: "进行中",
+      paused: "已暂停",
+      completed: "已完成",
+      failed: "失败",
+      cancelled: "已取消",
+    };
+    return map[status] || status;
+  };
+
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Button variant="ghost" size="icon" onClick={() => navigate(-1)}>
             <ArrowLeft className="h-5 w-5" />
           </Button>
           <div>
-            <h1 className="text-2xl font-bold">Scan Details</h1>
+            <h1 className="text-2xl font-bold">扫描详情</h1>
             <p className="text-muted-foreground">ID: {scanId}</p>
           </div>
         </div>
@@ -142,7 +171,7 @@ export default function ScanDetailPage() {
                 onClick={() => pauseMutation.mutate()}
               >
                 <Pause className="mr-2 h-4 w-4" />
-                Pause
+                暂停
               </Button>
               <Button
                 variant="destructive"
@@ -150,14 +179,14 @@ export default function ScanDetailPage() {
                 onClick={() => stopMutation.mutate()}
               >
                 <Square className="mr-2 h-4 w-4" />
-                Stop
+                停止
               </Button>
             </>
           )}
           {isPaused && (
             <Button size="sm" onClick={() => resumeMutation.mutate()}>
               <Play className="mr-2 h-4 w-4" />
-              Resume
+              继续
             </Button>
           )}
           {isCompleted && (
@@ -167,22 +196,22 @@ export default function ScanDetailPage() {
               onClick={() => handleExport("json")}
             >
               <Download className="mr-2 h-4 w-4" />
-              Export
+              导出
             </Button>
           )}
         </div>
       </div>
 
-      {/* Status Card */}
+      {/* 状态卡片 */}
       <Card>
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <StatusIcon status={scan.status} />
               <div>
-                <p className="font-medium capitalize">{scan.status}</p>
+                <p className="font-medium">{formatStatus(scan.status)}</p>
                 <p className="text-sm text-muted-foreground">
-                  {scan.current_phase || "Waiting..."}
+                  {scan.current_phase ? PHASE_NAMES[scan.current_phase.toUpperCase()] || scan.current_phase : "等待中..."}
                 </p>
               </div>
             </div>
@@ -194,10 +223,10 @@ export default function ScanDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Phase Progress */}
+      {/* 阶段进度 */}
       <Card>
         <CardHeader>
-          <CardTitle>Scan Phases</CardTitle>
+          <CardTitle>扫描阶段</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -225,11 +254,11 @@ export default function ScanDetailPage() {
                       isActive={isActive}
                     />
                     <div>
-                      <p className="font-medium">{formatPhaseName(phaseName)}</p>
+                      <p className="font-medium">{PHASE_NAMES[phaseName] || phaseName}</p>
                       {phaseResult && (
                         <p className="text-xs text-muted-foreground">
                           {formatDuration(phaseResult.duration_ms)} •{" "}
-                          {phaseResult.findings_count} findings
+                          {phaseResult.findings_count} 个发现
                         </p>
                       )}
                     </div>
@@ -241,10 +270,10 @@ export default function ScanDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Vulnerability Summary */}
+      {/* 漏洞汇总 */}
       <Card>
         <CardHeader>
-          <CardTitle>Vulnerabilities</CardTitle>
+          <CardTitle>漏洞列表</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-5 gap-4 mb-6">
@@ -259,12 +288,12 @@ export default function ScanDetailPage() {
                 <p className="text-2xl font-bold">
                   {vulnsData?.stats.by_severity[severity] || 0}
                 </p>
-                <p className="text-xs capitalize">{severity}</p>
+                <p className="text-xs">{SEVERITY_NAMES[severity]}</p>
               </div>
             ))}
           </div>
 
-          {/* Vulnerability List */}
+          {/* 漏洞列表 */}
           <div className="space-y-2 max-h-[400px] overflow-auto">
             {vulnsData?.vulnerabilities.map((vuln) => (
               <div
@@ -288,7 +317,7 @@ export default function ScanDetailPage() {
                       | "info"
                     }
                   >
-                    {vuln.severity}
+                    {SEVERITY_NAMES[vuln.severity] || vuln.severity}
                   </Badge>
                   {vuln.plugin_name && (
                     <Badge variant="outline">{vuln.plugin_name}</Badge>
@@ -299,19 +328,19 @@ export default function ScanDetailPage() {
             {(!vulnsData?.vulnerabilities ||
               vulnsData.vulnerabilities.length === 0) && (
                 <div className="text-center py-8 text-muted-foreground">
-                  No vulnerabilities found yet
+                  暂未发现漏洞
                 </div>
               )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Console Output */}
+      {/* 控制台输出 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Terminal className="h-5 w-5" />
-            Console Output
+            控制台输出
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -361,11 +390,4 @@ function PhaseIcon({
     default:
       return <Clock className="h-5 w-5 text-muted-foreground" />;
   }
-}
-
-function formatPhaseName(phase: string): string {
-  return phase
-    .split("_")
-    .map((word) => word.charAt(0) + word.slice(1).toLowerCase())
-    .join(" ");
 }

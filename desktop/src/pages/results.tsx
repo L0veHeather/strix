@@ -13,13 +13,13 @@ export default function ResultsPage() {
   const [search, setSearch] = useState("");
   const [severityFilter, setSeverityFilter] = useState<string | null>(null);
 
-  // Fetch all scans
+  // 获取所有扫描
   const { data: scansData } = useQuery({
     queryKey: ["scans"],
     queryFn: () => scanApi.list({ limit: 100 }),
   });
 
-  // Fetch severity breakdown
+  // 获取严重程度统计
   const { data: severityData } = useQuery({
     queryKey: ["severity-breakdown"],
     queryFn: resultsApi.getSeverityBreakdown,
@@ -29,19 +29,27 @@ export default function ResultsPage() {
     (s) => s.status === "completed"
   );
 
+  const severityLabels: Record<string, string> = {
+    critical: "严重",
+    high: "高危",
+    medium: "中危",
+    low: "低危",
+    info: "信息",
+  };
+
   return (
     <div className="p-6 space-y-6">
-      {/* Header */}
+      {/* 页面头部 */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Results</h1>
+          <h1 className="text-3xl font-bold">扫描结果</h1>
           <p className="text-muted-foreground">
-            View and analyze scan results
+            查看和分析扫描结果
           </p>
         </div>
       </div>
 
-      {/* Stats */}
+      {/* 统计 */}
       <div className="grid gap-4 md:grid-cols-5">
         {["critical", "high", "medium", "low", "info"].map((severity) => (
           <Card
@@ -67,20 +75,20 @@ export default function ResultsPage() {
               >
                 {severityData?.breakdown[severity] || 0}
               </div>
-              <p className="text-sm text-muted-foreground capitalize">
-                {severity}
+              <p className="text-sm text-muted-foreground">
+                {severityLabels[severity]}
               </p>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Search */}
+      {/* 搜索 */}
       <div className="flex gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Search scans..."
+            placeholder="搜索扫描..."
             className="pl-10"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -91,15 +99,15 @@ export default function ResultsPage() {
             variant="outline"
             onClick={() => setSeverityFilter(null)}
           >
-            Clear Filter
+            清除筛选
           </Button>
         )}
       </div>
 
-      {/* Scan List */}
+      {/* 扫描列表 */}
       <Card>
         <CardHeader>
-          <CardTitle>Completed Scans</CardTitle>
+          <CardTitle>已完成的扫描</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
@@ -128,7 +136,7 @@ export default function ResultsPage() {
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       {scan.completed_at
-                        ? new Date(scan.completed_at).toLocaleString()
+                        ? new Date(scan.completed_at).toLocaleString("zh-CN")
                         : "N/A"}
                     </p>
                   </div>
@@ -138,7 +146,7 @@ export default function ResultsPage() {
                         {scan.vulnerability_count}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        vulnerabilities
+                        个漏洞
                       </p>
                     </div>
                     <Button variant="ghost" size="icon">
@@ -150,13 +158,13 @@ export default function ResultsPage() {
             {(!completedScans || completedScans.length === 0) && (
               <div className="text-center py-12 text-muted-foreground">
                 <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-                <p>No completed scans yet</p>
+                <p>暂无已完成的扫描</p>
                 <Button
                   variant="link"
                   onClick={() => navigate("/scan")}
                   className="mt-2"
                 >
-                  Start a new scan
+                  开始新扫描
                 </Button>
               </div>
             )}

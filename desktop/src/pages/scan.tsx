@@ -19,36 +19,36 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { scanApi, pluginApi, settingsApi } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
-import { useStrixStore } from "@/lib/store";
+import { useTrixStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 const SCAN_PHASES = [
-  { id: "RECONNAISSANCE", name: "Reconnaissance", description: "Information gathering", icon: "🔍" },
-  { id: "ENUMERATION", name: "Enumeration", description: "Content & endpoint discovery", icon: "📂" },
-  { id: "VULNERABILITY_SCAN", name: "Vulnerability Scan", description: "Automated scanning", icon: "🔬" },
-  { id: "EXPLOITATION", name: "Exploitation", description: "Verify vulnerabilities", icon: "💥" },
-  { id: "VALIDATION", name: "Validation", description: "Finding verification", icon: "✅" },
+  { id: "RECONNAISSANCE", name: "信息收集", description: "目标信息搜集", icon: "🔍" },
+  { id: "ENUMERATION", name: "枚举扫描", description: "内容与端点发现", icon: "📂" },
+  { id: "VULNERABILITY_SCAN", name: "漏洞扫描", description: "自动化漏洞检测", icon: "🔬" },
+  { id: "EXPLOITATION", name: "漏洞利用", description: "验证漏洞可利用性", icon: "💥" },
+  { id: "VALIDATION", name: "验证确认", description: "发现结果验证", icon: "✅" },
 ];
 
 const SCAN_PRESETS = [
   {
     id: "quick",
-    name: "Quick Scan",
-    description: "Fast reconnaissance and basic vuln scan",
+    name: "快速扫描",
+    description: "快速侦察和基础漏洞扫描",
     phases: ["RECONNAISSANCE", "VULNERABILITY_SCAN"],
     icon: <Zap className="h-5 w-5" />,
   },
   {
     id: "full",
-    name: "Full Scan",
-    description: "Complete security assessment",
+    name: "完整扫描",
+    description: "全面的安全评估",
     phases: ["RECONNAISSANCE", "ENUMERATION", "VULNERABILITY_SCAN", "EXPLOITATION", "VALIDATION"],
     icon: <Shield className="h-5 w-5" />,
   },
   {
     id: "recon",
-    name: "Recon Only",
-    description: "Information gathering only",
+    name: "仅侦察",
+    description: "仅进行信息收集",
     phases: ["RECONNAISSANCE", "ENUMERATION"],
     icon: <Target className="h-5 w-5" />,
   },
@@ -57,8 +57,8 @@ const SCAN_PRESETS = [
 export default function ScanPage() {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const setActiveScan = useStrixStore((s) => s.setActiveScan);
-  const addConsoleLog = useStrixStore((s) => s.addConsoleLog);
+  const setActiveScan = useTrixStore((s) => s.setActiveScan);
+  const addConsoleLog = useTrixStore((s) => s.addConsoleLog);
 
   const [target, setTarget] = useState("");
   const [scanName, setScanName] = useState("");
@@ -70,13 +70,13 @@ export default function ScanPage() {
   const [selectedPlugins, setSelectedPlugins] = useState<string[]>([]);
   const [scopeContent, setScopeContent] = useState("");
 
-  // Fetch available plugins
+  // 获取可用插件
   const { data: pluginsData } = useQuery({
     queryKey: ["plugins"],
     queryFn: () => pluginApi.list({ enabled_only: true }),
   });
 
-  // Check LLM configuration
+  // 检查 LLM 配置
   const { data: llmConfig } = useQuery({
     queryKey: ["llm-config"],
     queryFn: settingsApi.getLLMConfig,
@@ -87,15 +87,14 @@ export default function ScanPage() {
     llmConfig.config.model.startsWith("ollama/")
   );
 
-  // Create scan mutation
+  // 创建扫描
   const createScan = useMutation({
     mutationFn: scanApi.create,
     onSuccess: (scan) => {
-      // Initialize console log
       addConsoleLog(scan.id, {
         type: "info",
         source: "system",
-        message: `Scan created: ${scan.id}`,
+        message: `扫描已创建: ${scan.id}`,
       });
 
       setActiveScan({
@@ -110,14 +109,14 @@ export default function ScanPage() {
         vulnerabilityCount: scan.vulnerability_count,
       });
       toast({
-        title: "Scan Started",
-        description: `Scanning ${scan.target}`,
+        title: "扫描已启动",
+        description: `正在扫描 ${scan.target}`,
       });
       navigate(`/scan/${scan.id}`);
     },
     onError: (error: Error) => {
       toast({
-        title: "Failed to start scan",
+        title: "启动扫描失败",
         description: error.message,
         variant: "destructive",
       });
@@ -127,20 +126,20 @@ export default function ScanPage() {
   const handleStartScan = () => {
     if (!target.trim()) {
       toast({
-        title: "Target required",
-        description: "Please enter a target URL",
+        title: "需要目标地址",
+        description: "请输入目标 URL",
         variant: "destructive",
       });
       return;
     }
 
-    // Validate URL
+    // 验证 URL
     try {
       new URL(target);
     } catch {
       toast({
-        title: "Invalid URL",
-        description: "Please enter a valid URL (e.g., https://example.com)",
+        title: "无效的 URL",
+        description: "请输入有效的 URL (例如: https://example.com)",
         variant: "destructive",
       });
       return;
@@ -182,44 +181,44 @@ export default function ScanPage() {
 
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
-      {/* Header */}
+      {/* 页面头部 */}
       <div>
-        <h1 className="text-3xl font-bold">New Scan</h1>
+        <h1 className="text-3xl font-bold">新建扫描</h1>
         <p className="text-muted-foreground">
-          Configure and start a new security scan
+          配置并启动新的安全扫描
         </p>
       </div>
 
-      {/* LLM Warning */}
+      {/* LLM 警告 */}
       {!isLLMConfigured && (
         <Card className="border-yellow-500/50 bg-yellow-500/10">
           <CardContent className="p-4 flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-yellow-500" />
             <div className="flex-1">
-              <p className="font-medium">LLM not configured</p>
+              <p className="font-medium">LLM 未配置</p>
               <p className="text-sm text-muted-foreground">
-                Configure an LLM provider in Settings for AI-powered analysis
+                请在设置中配置 LLM 提供商以启用 AI 分析功能
               </p>
             </div>
             <Button variant="outline" size="sm" onClick={() => navigate("/settings")}>
-              Configure
+              去配置
             </Button>
           </CardContent>
         </Card>
       )}
 
-      {/* Main Form */}
+      {/* 主表单 */}
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Target className="h-5 w-5" />
-            Target Configuration
+            目标配置
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Target URL */}
+          {/* 目标 URL */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Target URL *</label>
+            <label className="text-sm font-medium">目标 URL *</label>
             <Input
               placeholder="https://example.com"
               value={target}
@@ -227,25 +226,25 @@ export default function ScanPage() {
               className="text-lg"
             />
             <p className="text-xs text-muted-foreground">
-              Enter the base URL of the web application to scan
+              输入要扫描的 Web 应用程序基础 URL
             </p>
           </div>
 
-          {/* Scan Name (Optional) */}
+          {/* 扫描名称 (可选) */}
           <div className="space-y-2">
             <label className="text-sm font-medium">
-              Scan Name <span className="text-muted-foreground">(optional)</span>
+              扫描名称 <span className="text-muted-foreground">(可选)</span>
             </label>
             <Input
-              placeholder="My Security Scan"
+              placeholder="我的安全扫描"
               value={scanName}
               onChange={(e) => setScanName(e.target.value)}
             />
           </div>
 
-          {/* Scan Presets */}
+          {/* 扫描预设 */}
           <div className="space-y-3">
-            <label className="text-sm font-medium">Scan Type</label>
+            <label className="text-sm font-medium">扫描类型</label>
             <div className="grid grid-cols-3 gap-3">
               {SCAN_PRESETS.map((preset) => (
                 <div
@@ -273,7 +272,7 @@ export default function ScanPage() {
             </div>
           </div>
 
-          {/* Advanced Options Toggle */}
+          {/* 高级选项切换 */}
           <Button
             variant="ghost"
             className="w-full justify-between"
@@ -281,7 +280,7 @@ export default function ScanPage() {
           >
             <span className="flex items-center gap-2">
               <Settings2 className="h-4 w-4" />
-              Advanced Options
+              高级选项
             </span>
             {showAdvanced ? (
               <ChevronUp className="h-4 w-4" />
@@ -290,29 +289,29 @@ export default function ScanPage() {
             )}
           </Button>
 
-          {/* Advanced Options */}
+          {/* 高级选项 */}
           {showAdvanced && (
             <div className="space-y-6 pt-4 border-t">
-              {/* Scope Configuration */}
+              {/* 范围配置 */}
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <FileText className="h-4 w-4" />
-                  Scope Configuration
+                  范围配置
                 </label>
                 <textarea
                   className="w-full h-24 p-3 rounded-md border bg-background text-sm font-mono"
-                  placeholder={`# Include patterns (one per line)\n*.example.com\napi.example.com/*\n\n# Exclude (prefix with !)\n!admin.example.com`}
+                  placeholder={`# 包含规则 (每行一个)\n*.example.com\napi.example.com/*\n\n# 排除规则 (以 ! 开头)\n!admin.example.com`}
                   value={scopeContent}
                   onChange={(e) => setScopeContent(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Define URLs/patterns to include or exclude from scanning
+                  定义要包含或排除的 URL/规则
                 </p>
               </div>
 
-              {/* Phase Selection */}
+              {/* 阶段选择 */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">Scan Phases</label>
+                <label className="text-sm font-medium">扫描阶段</label>
                 <div className="grid gap-2">
                   {SCAN_PHASES.map((phase) => (
                     <div
@@ -351,11 +350,11 @@ export default function ScanPage() {
                 </div>
               </div>
 
-              {/* Plugin Selection */}
+              {/* 插件选择 */}
               <div className="space-y-3">
-                <label className="text-sm font-medium">Plugins</label>
+                <label className="text-sm font-medium">插件</label>
                 <p className="text-xs text-muted-foreground">
-                  Select specific plugins to use (leave empty for all enabled)
+                  选择要使用的特定插件 (留空则使用所有已启用的插件)
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {pluginsData?.plugins.map((plugin) => (
@@ -379,7 +378,7 @@ export default function ScanPage() {
         </CardContent>
       </Card>
 
-      {/* Start Button */}
+      {/* 开始按钮 */}
       <Button
         size="lg"
         className="w-full"
@@ -389,26 +388,26 @@ export default function ScanPage() {
         {createScan.isPending ? (
           <>
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Starting Scan...
+            正在启动...
           </>
         ) : (
           <>
             <Play className="mr-2 h-4 w-4" />
-            Start Scan
+            开始扫描
           </>
         )}
       </Button>
 
-      {/* Quick Tips */}
+      {/* 快速提示 */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-sm">Quick Tips</CardTitle>
+          <CardTitle className="text-sm">快速提示</CardTitle>
         </CardHeader>
         <CardContent className="text-sm text-muted-foreground space-y-2">
-          <p>• Ensure you have authorization to scan the target</p>
-          <p>• Use "Quick Scan" for fast initial assessment</p>
-          <p>• Configure scope to limit scan to specific paths</p>
-          <p>• Results are saved automatically during the scan</p>
+          <p>• 确保您有权限扫描目标</p>
+          <p>• 使用"快速扫描"进行快速初步评估</p>
+          <p>• 配置范围以限制扫描到特定路径</p>
+          <p>• 扫描结果会自动保存</p>
         </CardContent>
       </Card>
     </div>

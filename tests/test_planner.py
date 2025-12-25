@@ -3,7 +3,7 @@
 import json
 import pytest
 
-from strix.agents.planner import (
+from trix.agents.planner import (
     MODULE_DESCRIPTIONS,
     MODULE_PHASES,
     MODULE_TIMEOUTS,
@@ -17,7 +17,7 @@ from strix.agents.planner import (
     StepStatus,
     create_plan_from_fingerprint,
 )
-from strix.core.tci import (
+from trix.core.tci import (
     ComplexityLevel,
     SecurityPosture,
     TargetFingerprint,
@@ -651,4 +651,4 @@ class TestPlanExecution:
 
 
 # Import for type hints
-from strix.core.tci import TargetCategory
+from trix.core.tci import TargetCategory
