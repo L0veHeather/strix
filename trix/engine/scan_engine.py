@@ -294,7 +294,7 @@ class ScanEngine:
                 collector.mark_phase_completed(result.phase)
                 
                 # Save phase result to database
-                db.save_phase_result(
+                db.add_phase_result(
                     scan_id=scan_id,
                     phase=result.phase.value,
                     status=result.status.value,
