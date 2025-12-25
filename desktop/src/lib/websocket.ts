@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from "react";
-import { useStrixStore, useSettingsStore, ConsoleLogEntry } from "./store";
+import { useStrixStore, useSettingsStore } from "./store";
 
 type MessageHandler = (data: unknown) => void;
 

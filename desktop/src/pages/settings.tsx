@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSettingsStore } from "@/lib/store";
 import { useTheme } from "@/components/theme-provider";
-import { settingsApi, LLMProvider, LLMConfig } from "@/lib/api";
+import { settingsApi, LLMConfig } from "@/lib/api";
 import { useToast } from "@/hooks/use-toast";
 import {
   Settings,

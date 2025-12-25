@@ -20,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { scanApi, resultsApi } from "@/lib/api";
 import { useWebSocket } from "@/lib/websocket";
-import { useStrixStore } from "@/lib/store";
 import { ScanConsole } from "@/components/scan-console";
 import { cn, formatDuration } from "@/lib/utils";
 
@@ -235,15 +234,6 @@ export default function ScanDetailPage() {
                       )}
                     </div>
                   </div>
-                  {phaseResult?.plugins_executed && (
-                    <div className="flex gap-1">
-                      {phaseResult.plugins_executed.slice(0, 3).map((plugin) => (
-                        <Badge key={plugin} variant="outline" className="text-xs">
-                          {plugin}
-                        </Badge>
-                      ))}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -291,11 +281,11 @@ export default function ScanDetailPage() {
                   <Badge
                     variant={
                       vuln.severity as
-                        | "critical"
-                        | "high"
-                        | "medium"
-                        | "low"
-                        | "info"
+                      | "critical"
+                      | "high"
+                      | "medium"
+                      | "low"
+                      | "info"
                     }
                   >
                     {vuln.severity}
@@ -308,10 +298,10 @@ export default function ScanDetailPage() {
             ))}
             {(!vulnsData?.vulnerabilities ||
               vulnsData.vulnerabilities.length === 0) && (
-              <div className="text-center py-8 text-muted-foreground">
-                No vulnerabilities found yet
-              </div>
-            )}
+                <div className="text-center py-8 text-muted-foreground">
+                  No vulnerabilities found yet
+                </div>
+              )}
           </div>
         </CardContent>
       </Card>
@@ -325,8 +315,8 @@ export default function ScanDetailPage() {
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
-          <ScanConsole 
-            scanId={scanId!} 
+          <ScanConsole
+            scanId={scanId!}
             maxHeight="500px"
             className="border-0 rounded-none"
           />

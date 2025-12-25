@@ -1,12 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { FileText, Search, Filter, Download } from "lucide-react";
+import { FileText, Search, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { scanApi, resultsApi } from "@/lib/api";
-import { cn, formatDuration } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useState } from "react";
 
 export default function ResultsPage() {

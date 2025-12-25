@@ -107,3 +107,12 @@ docker-compose.*.local.yml
 .env.local
 .env.*.local
 !.env.example
+
+# Node modules
+node_modules/
+desktop/node_modules/
+
+# Build outputs
+dist/
+desktop/dist/
+.next/

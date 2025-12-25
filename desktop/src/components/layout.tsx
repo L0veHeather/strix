@@ -12,7 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useStrixStore } from "@/lib/store";
 import { useWebSocket } from "@/lib/websocket";
-import { useEffect } from "react";
+// import { useEffect } from "react";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },

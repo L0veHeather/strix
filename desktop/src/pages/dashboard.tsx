@@ -5,7 +5,7 @@ import {
   AlertTriangle,
   AlertCircle,
   Info,
-  Clock,
+  // Clock,
   Target,
   ArrowRight,
   TrendingUp,
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { scanApi, resultsApi } from "@/lib/api";
-import { formatDuration, cn } from "@/lib/utils";
+import {  cn } from "@/lib/utils";
 import { useStrixStore } from "@/lib/store";
 
 export default function Dashboard() {
